@@ -50,18 +50,18 @@ body, html {
   background-color: #3182ce;
 }
 
-.model-selector, .temperature-slider {
+.model-selector, .temperature-slider, .quantization-selector {
   margin-bottom: 16px;
 }
 
-.model-selector label, .temperature-slider label {
+.model-selector label, .temperature-slider label, .quantization-selector label {
   display: block;
   margin-bottom: 8px;
   font-size: 14px;
   color: #cbd5e0;
 }
 
-#model-select {
+#model-select, #quantization-select {
   width: 100%;
   padding: 8px;
   border-radius: 4px;
@@ -204,4 +204,4 @@ body, html {
 #send-button:disabled, #chat-input:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-} 
+}

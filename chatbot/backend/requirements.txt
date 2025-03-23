@@ -4,6 +4,7 @@ python-multipart==0.0.9
 langchain
 langchain-community
 langchain-text-splitters
+langchain-chroma>=0.1.0
 pypdf==4.0.2
 pdf2image==1.17.0
 pytesseract==0.3.10

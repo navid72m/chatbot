@@ -21,6 +21,16 @@
           </select>
         </div>
         
+        <div class="quantization-selector">
+          <label for="quantization-select">Quantization:</label>
+          <select id="quantization-select">
+            <option value="4bit" selected>4-bit (Recommended)</option>
+            <option value="8bit">8-bit</option>
+            <option value="1bit">1-bit (Fastest, Lower Quality)</option>
+            <option value="None">None (Full Precision)</option>
+          </select>
+        </div>
+        
         <div class="temperature-slider">
           <label for="temperature">Temperature: <span id="temperature-value">0.7</span></label>
           <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7">
@@ -41,7 +51,7 @@
       <div class="chat-container">
         <div class="chat-messages" id="chat-messages">
           <div class="message system">
-            Welcome to Document Chat! Upload a document to get started.
+            Welcome to Document Chat! Upload a document to get started. This version supports 4-bit quantization for faster inference with Ollama models.
           </div>
         </div>
         
@@ -55,4 +65,4 @@
 
   <script src="renderer.js"></script>
 </body>
-</html> 
+</html>

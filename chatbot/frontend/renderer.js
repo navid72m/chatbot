@@ -1,5 +1,4 @@
-// renderer.js - Frontend logic
-// We'll use the marked library from the preload script instead of requiring it directly
+// renderer.js - Frontend logic with quantization support
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM Content Loaded');
@@ -8,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Upload button element:', uploadButton);
     
     const modelSelect = document.getElementById('model-select');
+    const quantizationSelect = document.getElementById('quantization-select');
     const temperatureSlider = document.getElementById('temperature');
     const temperatureValue = document.getElementById('temperature-value');
     const documentsList = document.getElementById('documents');
@@ -63,6 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Set up periodic Ollama status check
       setInterval(checkOllama, 30000);
+      
+      // Show info about quantization
+      addMessage('This version supports 4-bit quantization, which reduces memory usage and improves inference speed with minimal quality loss. You can change the quantization level in the sidebar.', 'system');
     }
     
     // Initialize temperature display
@@ -136,8 +139,10 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const model = modelSelect.value;
         const temperature = parseFloat(temperatureSlider.value);
+        const quantization = quantizationSelect.value;
         
-        const response = await window.api.queryDocument(query, model, temperature);
+        // Updated to include quantization parameter
+        const response = await window.api.queryDocument(query, model, temperature, quantization);
         
         if (response.response) {
           // Add bot message

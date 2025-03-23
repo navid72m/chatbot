@@ -1,4 +1,4 @@
-// main.js - Electron main process
+// main.js - Electron main process with quantization support
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -91,7 +91,7 @@ async function startBackend() {
 
 function createWindow() {
   // Get the absolute path to the preload script
-  const preloadPath = path.join(app.getAppPath(),  'preload.js');
+  const preloadPath = path.join(app.getAppPath(), 'preload.js');
   
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -173,12 +173,14 @@ ipcMain.handle('upload-document', async (event, filePath) => {
   }
 });
 
-ipcMain.handle('query-document', async (event, query, model, temperature) => {
+// Updated to include quantization parameter
+ipcMain.handle('query-document', async (event, query, model, temperature, quantization) => {
   try {
     const response = await axios.post(`${API_URL}/query`, {
       query,
       model,
-      temperature
+      temperature,
+      quantization
     });
     
     return response.data;
@@ -223,7 +225,3 @@ ipcMain.handle('open-external-link', async (event, url) => {
   await shell.openExternal(url);
   return true;
 });
-
-
-
- 
