@@ -1,0 +1,16 @@
+fastapi==0.110.0
+uvicorn==0.27.1
+python-multipart==0.0.9
+langchain
+langchain-community
+langchain-text-splitters
+pypdf==4.0.2
+pdf2image==1.17.0
+pytesseract==0.3.10
+pillow==10.2.0
+chromadb==0.4.24
+sentence-transformers==2.5.0
+torch==2.2.1
+transformers==4.38.1
+requests==2.31.0
+pydantic==2.6.3

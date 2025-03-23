@@ -1,52 +1,58 @@
-# Backend Python
-backend/__pycache__/
-backend/*.py[cod]
-backend/*$py.class
-backend/*.so
-backend/.Python
-backend/env/
-backend/build/
-backend/develop-eggs/
-backend/dist/
-backend/downloads/
-backend/eggs/
-backend/.eggs/
-backend/lib/
-backend/lib64/
-backend/parts/
-backend/sdist/
-backend/var/
-backend/wheels/
-backend/*.egg-info/
-backend/.installed.cfg
-backend/*.egg
-backend/venv/
-backend/.env
+# Backend Python files
+chatbot/backend/__pycache__/
+chatbot/backend/*.py[cod]
+chatbot/backend/*$py.class
+chatbot/backend/*.so
+chatbot/backend/.Python
+chatbot/backend/build/
+chatbot/backend/develop-eggs/
+chatbot/backend/dist/
+chatbot/backend/downloads/
+chatbot/backend/eggs/
+chatbot/backend/.eggs/
+chatbot/backend/lib/
+chatbot/backend/lib64/
+chatbot/backend/parts/
+chatbot/backend/sdist/
+chatbot/backend/var/
+chatbot/backend/wheels/
+chatbot/backend/*.egg-info/
+chatbot/backend/.installed.cfg
+chatbot/backend/*.egg
+chatbot/backend/venv/
+chatbot/backend/.env
+chatbot/backend/.venv
+chatbot/backend/env/
+chatbot/backend/ENV/
 
-# Frontend Node
-frontend/node_modules/
-frontend/npm-debug.log
-frontend/yarn-debug.log
-frontend/yarn-error.log
-frontend/.env.local
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
-frontend/dist/
-frontend/release/
+# Frontend Node files
+chatbot/frontend/node_modules/
+chatbot/frontend/npm-debug.log*
+chatbot/frontend/yarn-debug.log*
+chatbot/frontend/yarn-error.log*
+chatbot/frontend/.env.local
+chatbot/frontend/.env.development.local
+chatbot/frontend/.env.test.local
+chatbot/frontend/.env.production.local
+chatbot/frontend/dist/
+chatbot/frontend/build/
+chatbot/frontend/.cache/
+chatbot/frontend/coverage/
 
-# IDE
+# IDE files
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
 
 # Project specific
-backend/chroma_db/
+chatbot/backend/chroma_db/
+chatbot/backend/uploads/
 *.pdf
 *.docx
 *.jpg

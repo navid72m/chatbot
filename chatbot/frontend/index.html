@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Document Chat</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <div class="sidebar">
+      <div class="logo">DocChat</div>
+      
+      <div class="actions">
+        <button id="upload-button" class="primary-button">Upload Document</button>
+        
+        <div class="model-selector">
+          <label for="model-select">LLM Model:</label>
+          <select id="model-select">
+            <option value="mistral">Mistral</option>
+            <!-- Other models will be populated from Ollama -->
+          </select>
+        </div>
+        
+        <div class="temperature-slider">
+          <label for="temperature">Temperature: <span id="temperature-value">0.7</span></label>
+          <input type="range" id="temperature" min="0" max="1" step="0.1" value="0.7">
+        </div>
+      </div>
+      
+      <div class="document-list">
+        <h3>Documents</h3>
+        <ul id="documents"></ul>
+      </div>
+      
+      <div class="status">
+        <div id="status-message">Ready</div>
+      </div>
+    </div>
+    
+    <div class="main-content">
+      <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <div class="message system">
+            Welcome to Document Chat! Upload a document to get started.
+          </div>
+        </div>
+        
+        <div class="chat-input-container">
+          <input type="text" id="chat-input" placeholder="Ask about your documents..." disabled>
+          <button id="send-button" disabled>Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html> 
