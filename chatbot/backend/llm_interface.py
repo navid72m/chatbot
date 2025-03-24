@@ -32,9 +32,9 @@ def query_ollama(
     model_name = model
     if quantization and quantization.lower() != "none":
         if quantization == "4bit":
-            model_name = f"{model}:q4_0"
+            model_name = f"{model}:7b-instruct-q4_0"
         elif quantization == "8bit":
-            model_name = f"{model}:q8_0"
+            model_name = f"{model}:7b-instruct-q8_0"
         elif quantization == "1bit":
             model_name = f"{model}:q1_1"
     
@@ -153,8 +153,8 @@ def list_ollama_models() -> List[str]:
         for model in result.get("models", []):
             name = model.get("name", "")
             # Strip quantization suffixes for grouping
-            base_name = name.split(":")[0]
-            base_models.add(base_name)
+            # base_name = name.split(":")[0]
+            base_models.add(name)
         
         return list(base_models)
     except Exception as e:
