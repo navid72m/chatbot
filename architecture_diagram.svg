@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600">
+  <!-- Background -->
+  <rect width="900" height="600" fill="#f8f9fa" />
+  
+  <!-- Title -->
+  <text x="450" y="50" font-family="Arial" font-size="24" font-weight="bold" text-anchor="middle">Advanced RAG System Architecture</text>
+  
+  <!-- User and Documents -->
+  <rect x="50" y="100" width="120" height="60" rx="10" ry="10" fill="#e3f2fd" stroke="#1565c0" stroke-width="2" />
+  <text x="110" y="140" font-family="Arial" font-size="16" text-anchor="middle">Documents</text>
+  
+  <rect x="50" y="400" width="120" height="60" rx="10" ry="10" fill="#e3f2fd" stroke="#1565c0" stroke-width="2" />
+  <text x="110" y="440" font-family="Arial" font-size="16" text-anchor="middle">User Query</text>
+  
+  <!-- Document Processor -->
+  <rect x="240" y="100" width="140" height="60" rx="10" ry="10" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2" />
+  <text x="310" y="140" font-family="Arial" font-size="16" text-anchor="middle">Document Processor</text>
+  
+  <!-- Storage Systems -->
+  <rect x="240" y="230" width="140" height="60" rx="10" ry="10" fill="#fff3e0" stroke="#e65100" stroke-width="2" />
+  <text x="310" y="260" font-family="Arial" font-size="16" text-anchor="middle">Vector Store</text>
+  <text x="310" y="280" font-family="Arial" font-size="12" text-anchor="middle">(ChromaDB)</text>
+  
+  <rect x="450" y="230" width="140" height="60" rx="10" ry="10" fill="#e1f5fe" stroke="#0277bd" stroke-width="2" />
+  <text x="520" y="260" font-family="Arial" font-size="16" text-anchor="middle">Knowledge Graph</text>
+  <text x="520" y="280" font-family="Arial" font-size="12" text-anchor="middle">(Neo4j)</text>
+  
+  <!-- Retrieval Systems -->
+  <rect x="240" y="350" width="140" height="60" rx="10" ry="10" fill="#fff3e0" stroke="#e65100" stroke-width="2" />
+  <text x="310" y="380" font-family="Arial" font-size="16" text-anchor="middle">Vector Retrieval</text>
+  
+  <rect x="450" y="350" width="140" height="60" rx="10" ry="10" fill="#e1f5fe" stroke="#0277bd" stroke-width="2" />
+  <text x="520" y="380" font-family="Arial" font-size="16" text-anchor="middle">Graph Retrieval</text>
+  
+  <!-- Hybrid Retriever -->
+  <rect x="345" y="450" width="140" height="60" rx="10" ry="10" fill="#f3e5f5" stroke="#6a1b9a" stroke-width="2" />
+  <text x="415" y="480" font-family="Arial" font-size="16" text-anchor="middle">Hybrid Retriever</text>
+  
+  <!-- Reasoning Components -->
+  <rect x="650" y="190" width="150" height="60" rx="10" ry="10" fill="#ffebee" stroke="#c62828" stroke-width="2" />
+  <text x="725" y="220" font-family="Arial" font-size="16" text-anchor="middle">Chain-of-Thought</text>
+  <text x="725" y="240" font-family="Arial" font-size="12" text-anchor="middle">Reasoning</text>
+  
+  <rect x="650" y="270" width="150" height="60" rx="10" ry="10" fill="#ede7f6" stroke="#4527a0" stroke-width="2" />
+  <text x="725" y="300" font-family="Arial" font-size="16" text-anchor="middle">Multi-hop</text>
+  <text x="725" y="320" font-family="Arial" font-size="12" text-anchor="middle">Reasoning</text>
+  
+  <rect x="650" y="350" width="150" height="60" rx="10" ry="10" fill="#e0f2f1" stroke="#00695c" stroke-width="2" />
+  <text x="725" y="380" font-family="Arial" font-size="16" text-anchor="middle">Answer</text>
+  <text x="725" y="400" font-family="Arial" font-size="12" text-anchor="middle">Verification</text>
+  
+  <!-- LLM Component -->
+  <rect x="650" y="450" width="150" height="60" rx="10" ry="10" fill="#fce4ec" stroke="#ad1457" stroke-width="2" />
+  <text x="725" y="480" font-family="Arial" font-size="16" text-anchor="middle">LLM Interface</text>
+  <text x="725" y="500" font-family="Arial" font-size="12" text-anchor="middle">(Ollama)</text>
+  
+  <!-- Final Answer -->
+  <rect x="650" y="530" width="150" height="60" rx="10" ry="10" fill="#e3f2fd" stroke="#1565c0" stroke-width="2" />
+  <text x="725" y="570" font-family="Arial" font-size="16" text-anchor="middle">Final Answer</text>
+  
+  <!-- Connection Arrows -->
+  <!-- Document Flow -->
+  <path d="M170 130 L240 130" stroke="#1565c0" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M380 130 L450 130 L450 230" stroke="#1565c0" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M310 160 L310 230" stroke="#2e7d32" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <!-- Query Flow -->
+  <path d="M170 430 L240 380" stroke="#1565c0" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M170 430 L450 380" stroke="#1565c0" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <!-- Retrieval Flow -->
+  <path d="M310 290 L310 350" stroke="#e65100" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M520 290 L520 350" stroke="#0277bd" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <!-- Hybrid Retrieval -->
+  <path d="M310 410 L370 450" stroke="#e65100" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M520 410 L460 450" stroke="#0277bd" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <!-- To Reasoning Layer -->
+  <path d="M485 480 L550 480 L550 220 L650 220" stroke="#6a1b9a" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M485 480 L550 480 L550 300 L650 300" stroke="#6a1b9a" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M485 480 L550 480 L550 380 L650 380" stroke="#6a1b9a" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <!-- LLM Integration -->
+  <path d="M725 250 L725 270" stroke="#c62828" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M725 330 L725 350" stroke="#4527a0" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M725 410 L725 450" stroke="#00695c" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <!-- Final Answer -->
+  <path d="M725 510 L725 530" stroke="#ad1457" stroke-width="2" fill="none" marker-end="url(#arrow)" />
+  
+  <!-- Bidirectional arrows for LLM -->
+  <path d="M725 220 C780 220, 780 480, 725 480" stroke="#c62828" stroke-width="2" stroke-dasharray="5,5" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M725 300 C800 300, 800 480, 725 480" stroke="#4527a0" stroke-width="2" stroke-dasharray="5,5" fill="none" marker-end="url(#arrow)" />
+  
+  <path d="M725 380 C760 380, 760 480, 725 480" stroke="#00695c" stroke-width="2" stroke-dasharray="5,5" fill="none" marker-end="url(#arrow)" />
+  
+  <!-- Arrow definition -->
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333" />
+    </marker>
+  </defs>
+  
+  <!-- Legend -->
+  <rect x="50" y="530" width="180" height="20" rx="5" ry="5" fill="#e3f2fd" stroke="#1565c0" stroke-width="2" />
+  <text x="140" y="545" font-family="Arial" font-size="12" text-anchor="middle">Input/Output</text>
+  
+  <rect x="50" y="560" width="180" height="20" rx="5" ry="5" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2" />
+  <text x="140" y="575" font-family="Arial" font-size="12" text-anchor="middle">Document Processing</text>
+  
+  <rect x="250" y="530" width="180" height="20" rx="5" ry="5" fill="#fff3e0" stroke="#e65100" stroke-width="2" />
+  <text x="340" y="545" font-family="Arial" font-size="12" text-anchor="middle">Vector Components</text>
+  
+  <rect x="250" y="560" width="180" height="20" rx="5" ry="5" fill="#e1f5fe" stroke="#0277bd" stroke-width="2" />
+  <text x="340" y="575" font-family="Arial" font-size="12" text-anchor="middle">Knowledge Graph Components</text>
+  
+  <rect x="450" y="530" width="180" height="20" rx="5" ry="5" fill="#f3e5f5" stroke="#6a1b9a" stroke-width="2" />
+  <text x="540" y="545" font-family="Arial" font-size="12" text-anchor="middle">Hybrid Components</text>
+  
+  <rect x="450" y="560" width="180" height="20" rx="5" ry="5" fill="#ffebee" stroke="#c62828" stroke-width="2" />
+  <text x="540" y="575" font-family="Arial" font-size="12" text-anchor="middle">Reasoning Components</text>
+</svg>
