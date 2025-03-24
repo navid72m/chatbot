@@ -1,48 +1,22 @@
 {
     "name": "document-chat-desktop",
     "version": "1.0.0",
-    "description": "A desktop application for document chat with Ollama integration",
+    "description": "A desktop application for document chat with Advanced RAG",
     "main": "main.js",
     "scripts": {
-        "start": "electron .",
-        "build": "electron-builder"
+      "dev": "vite",
+      "build": "vite build",
+      "start": "NODE_ENV=production electron ."
     },
     "dependencies": {
-        "axios": "^1.6.2",
-        "electron-store": "^8.1.0",
-        "form-data": "^4.0.0",
-        "marked": "^9.1.6"
+      "axios": "^1.6.2",
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0"
     },
     "devDependencies": {
-        "electron": "^29.1.0",
-        "electron-builder": "^24.9.1"
-    },
-    "build": {
-        "appId": "com.documentchat.app",
-        "productName": "Document Chat",
-        "files": [
-            "**/*",
-            "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
-            "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
-            "!**/node_modules/*.d.ts",
-            "!**/node_modules/.bin",
-            "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
-        ],
-        "mac": {
-            "category": "public.app-category.productivity"
-        },
-        "win": {
-            "target": [
-                "portable",
-                "nsis"
-            ]
-        },
-        "linux": {
-            "target": [
-                "AppImage",
-                "deb"
-            ],
-            "category": "Office"
-        }
+      "electron": "^29.1.0",
+      "vite": "^6.2.2",
+      "@vitejs/plugin-react": "^4.0.3"
     }
-}
+  }
+  

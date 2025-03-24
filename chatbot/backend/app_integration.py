@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
 # app_integration.py - Integration of Advanced RAG features into the main application
 from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware

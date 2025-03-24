@@ -1,6 +1,8 @@
 # vector_store.py - Vector storage with ChromaDB
-from langchain.vectorstores import Chroma
-from langchain.embeddings import HuggingFaceEmbeddings
+
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+
 from langchain.docstore.document import Document
 from typing import List, Dict, Optional
 import os
