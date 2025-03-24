@@ -142,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const quantization = quantizationSelect.value;
         
         // Updated to include quantization parameter
+        console.log('Querying document with:', { query, model, temperature, quantization });
         const response = await window.api.queryDocument(query, model, temperature, quantization);
         
         if (response.response) {

@@ -111,8 +111,8 @@ def test_generate_api():
     
     # Try both known API endpoints
     endpoints = [
-        "http://localhost:11434/api/generate",  # Current endpoint
-        "http://localhost:11434/api/chat"       # Possible alternative endpoint
+        "http://localhost:11435/api/generate",  # Current endpoint
+        "http://localhost:11435/api/chat"       # Possible alternative endpoint
     ]
     
     for endpoint in endpoints:
