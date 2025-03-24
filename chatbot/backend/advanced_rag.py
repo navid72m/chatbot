@@ -49,10 +49,10 @@ class AdvancedRAG:
         self.temperature = temperature
         
         # Configuration parameters
-        self.use_cot = True
-        self.use_kg = True
+        self.use_cot = False
+        self.use_kg = False
         self.verify_answers = True
-        self.use_multihop = True
+        self.use_multihop = False
         self.max_hops = 2
         self.max_kg_results = 3
         self.max_vector_results = 5
@@ -217,6 +217,8 @@ class AdvancedRAG:
             }
         
         # Step 2: Build context from relevant documents
+        logger.info(f"Building context from {len(relevant_docs)} documents")
+        logger.info(f"Relevant docs: {relevant_docs}")
         context = self._build_context(relevant_docs)
         
         # Step 3: Answer generation based on configuration
@@ -235,11 +237,13 @@ class AdvancedRAG:
             logger.info("Using chain-of-thought reasoning")
             cot_result = self.reasoner.answer_with_reasoning(query, context)
             
-            answer = cot_result["answer"]
-            reasoning = f"Entities: {cot_result['entities']}\n\n" + \
-                       f"Question type: {cot_result['question_type']}\n\n" + \
-                       f"Reasoning: {cot_result['reasoning']}\n\n" + \
-                       f"Limitations: {cot_result['limitations']}"
+            # answer = cot_result["answer"]
+            answer = cot_result
+            reasoning = "no reasoning"
+            # reasoning = f"Entities: {cot_result['entities']}\n\n" + \
+                    #    f"Question type: {cot_result['question_type']}\n\n" + \
+                    #    f"Reasoning: {cot_result['reasoning']}\n\n" + \
+                    #    f"Limitations: {cot_result['limitations']}"
         else:
             # Use standard query
             logger.info("Using standard query processing")
@@ -277,11 +281,11 @@ class AdvancedRAG:
         # Prepare the final response
         response = {
             "answer": answer,
-            "reasoning": reasoning,
-            "sources": sources,
-            "confidence": confidence,
-            "retrieval_time": elapsed,
-            "document_count": len(relevant_docs)
+            # "reasoning": reasoning,
+            # "sources": sources,
+            # "confidence": confidence,
+            # "retrieval_time": elapsed,
+            # "document_count": len(relevant_docs)
         }
         
         # Add verification details if available
@@ -293,21 +297,26 @@ class AdvancedRAG:
     def _build_context(self, documents: List[Document]) -> str:
         """Build context string from retrieved documents"""
         # Simple concatenation with document metadata
-        context_parts = []
-        
-        for i, doc in enumerate(documents):
-            source = doc.metadata.get("source", "Unknown")
-            text = doc.page_content.strip()
+        try:
+            context_parts = []
             
-            # Add a header for each document chunk
-            if "knowledge_graph_path" in source:
-                # This is a knowledge graph path, format differently
-                context_parts.append(f"[Knowledge Graph Relationship #{i+1}]\n{text}")
-            else:
-                # Regular document
-                context_parts.append(f"[Document: {source}, Chunk: {i+1}]\n{text}")
-        
-        return "\n\n".join(context_parts)
+            for i, doc in enumerate(documents):
+                source = doc.metadata.get("source", "Unknown")
+                text = doc.page_content.strip()
+                
+                # Add a header for each document chunk
+                if "knowledge_graph_path" in source:
+                    # This is a knowledge graph path, format differently
+                    context_parts.append(f"[Knowledge Graph Relationship #{i+1}]\n{text}")
+                else:
+                    # Regular document
+                    context_parts.append(f"[Document: {source}, Chunk: {i+1}]\n{text}")
+            
+            return "\n\n".join(context_parts)
+        except Exception as e:
+            logger.error(f"Error building context: {e}")
+            return ""
+    
     
     def _is_complex_query(self, query: str) -> bool:
         """

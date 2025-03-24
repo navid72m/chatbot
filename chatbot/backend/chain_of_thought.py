@@ -59,7 +59,7 @@ REASONING: [Connect the relevant information to answer the question]
 LIMITATIONS: [Note any missing information or assumptions]
 ANSWER: [Provide the final answer based on context only]
 """
-
+        
         # Get the response using the enhanced CoT prompt
         response = query_ollama(
             query=cot_prompt, 
@@ -71,43 +71,59 @@ ANSWER: [Provide the final answer based on context only]
         logger.info(f"Generated CoT response of length {len(response)}")
         
         # Parse the structured response
-        parsed_response = self._parse_cot_response(response)
+        # parsed_response = self._parse_cot_response(response)
+        # logger.info(f"Parsed response: {parsed_response}")
+        parsed_response = response
         
         return parsed_response
     
+    # def _parse_cot_response(self, response: str) -> Dict[str, str]:
+    #     """Parse the structured CoT response into components"""
+    #     # Initialize result dictionary
+    #     result = {
+    #         "entities": "",
+    #         "question_type": "",
+    #         "relevant_info": "",
+    #         "reasoning": "",
+    #         "limitations": "",
+    #         "answer": ""
+    #     }
+        
+    #     # Define patterns to extract each section
+    #     patterns = {
+    #         "entities": r"ENTITIES:(.*?)(?=QUESTION_TYPE:|$)",
+    #         "question_type": r"QUESTION_TYPE:(.*?)(?=RELEVANT_INFO:|$)",
+    #         "relevant_info": r"RELEVANT_INFO:(.*?)(?=REASONING:|$)",
+    #         "reasoning": r"REASONING:(.*?)(?=LIMITATIONS:|$)",
+    #         "limitations": r"LIMITATIONS:(.*?)(?=ANSWER:|$)",
+    #         "answer": r"ANSWER:(.*?)(?=$)"
+    #     }
+        
+    #     # Extract each section using regex
+    #     for key, pattern in patterns.items():
+    #         match = re.search(pattern, response, re.DOTALL)
+    #         if match:
+    #             result[key] = match.group(1).strip()
+                
+    #     # If parsing failed, return the full response as the answer
+    #     if not result["answer"]:
+    #         result["answer"] = response.strip()
+            
+    #     return result
     def _parse_cot_response(self, response: str) -> Dict[str, str]:
-        """Parse the structured CoT response into components"""
-        # Initialize result dictionary
         result = {
-            "entities": "",
-            "question_type": "",
-            "relevant_info": "",
             "reasoning": "",
-            "limitations": "",
             "answer": ""
         }
-        
-        # Define patterns to extract each section
-        patterns = {
-            "entities": r"ENTITIES:(.*?)(?=QUESTION_TYPE:|$)",
-            "question_type": r"QUESTION_TYPE:(.*?)(?=RELEVANT_INFO:|$)",
-            "relevant_info": r"RELEVANT_INFO:(.*?)(?=REASONING:|$)",
-            "reasoning": r"REASONING:(.*?)(?=LIMITATIONS:|$)",
-            "limitations": r"LIMITATIONS:(.*?)(?=ANSWER:|$)",
-            "answer": r"ANSWER:(.*?)(?=$)"
-        }
-        
-        # Extract each section using regex
-        for key, pattern in patterns.items():
-            match = re.search(pattern, response, re.DOTALL)
-            if match:
-                result[key] = match.group(1).strip()
-                
-        # If parsing failed, return the full response as the answer
-        if not result["answer"]:
-            result["answer"] = response.strip()
-            
+
+        reasoning_match = re.search(r"Reasoning:(.*?)Answer:", response, re.DOTALL)
+        answer_match = re.search(r"Answer:(.*)", response, re.DOTALL)
+
+        result["reasoning"] = reasoning_match.group(1).strip() if reasoning_match else ""
+        result["answer"] = answer_match.group(1).strip() if answer_match else response.strip()
+
         return result
+
     
     def verify_factual_accuracy(self, answer: str, context: str) -> Dict[str, Any]:
         """

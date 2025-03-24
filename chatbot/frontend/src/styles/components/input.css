@@ -1,0 +1,202 @@
+/* src/styles/components/input.css */
+
+.input-group {
+    margin-bottom: 16px;
+  }
+  
+  .input-label {
+    display: inline-block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+  
+  .input-required {
+    color: var(--danger-color);
+    margin-left: 4px;
+  }
+  
+  .input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  
+  .input-container:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  }
+  
+  .input-container.has-error {
+    border-color: var(--danger-color);
+  }
+  
+  .input-container.has-error:focus-within {
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+  }
+  
+  .input-container.has-success {
+    border-color: var(--success-color);
+  }
+  
+  .input-container.has-success:focus-within {
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+  }
+  
+  .input-container.is-disabled {
+    background-color: rgba(0, 0, 0, 0.05);
+    cursor: not-allowed;
+  }
+  
+  .input-container.is-readonly {
+    background-color: rgba(0, 0, 0, 0.02);
+  }
+  
+  .input {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    background-color: transparent;
+    border: none;
+    outline: none;
+  }
+  
+  .input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+  }
+  
+  .input:disabled {
+    cursor: not-allowed;
+  }
+  
+  .input-prefix,
+  .input-suffix {
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    color: var(--text-secondary);
+    font-size: 16px;
+  }
+  
+  .input-prefix {
+    border-right: 1px solid var(--border-color);
+  }
+  
+  .input-suffix {
+    border-left: 1px solid var(--border-color);
+  }
+  
+  .input-container.has-prefix .input {
+    padding-left: 0;
+  }
+  
+  .input-container.has-suffix .input {
+    padding-right: 0;
+  }
+  
+  .input-message {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  
+  .input-helper-text {
+    color: var(--text-secondary);
+  }
+  
+  .input-error-message {
+    color: var(--danger-color);
+  }
+  
+  .input-success-message {
+    color: var(--success-color);
+  }
+  
+  /* Input sizes */
+  .input-sm .input {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  
+  .input-sm .input-prefix,
+  .input-sm .input-suffix {
+    padding: 0 8px;
+    font-size: 14px;
+  }
+  
+  .input-lg .input {
+    padding: 12px 16px;
+    font-size: 16px;
+  }
+  
+  .input-lg .input-prefix,
+  .input-lg .input-suffix {
+    padding: 0 16px;
+    font-size: 18px;
+  }
+  
+  /* Firefox specific styling */
+  .input[type="number"] {
+    appearance: textfield;
+  }
+  
+  .input[type="number"]::-webkit-outer-spin-button,
+  .input[type="number"]::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+  
+  /* Date input styling */
+  .input[type="date"]::-webkit-calendar-picker-indicator,
+  .input[type="time"]::-webkit-calendar-picker-indicator,
+  .input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.6;
+    filter: invert(0.8);
+  }
+  
+  /* Checkbox and radio styling */
+  .input[type="checkbox"],
+  .input[type="radio"] {
+    width: auto;
+    margin-right: 8px;
+  }
+  
+  /* Focus visible polyfill */
+  .input:focus-visible {
+    outline: none;
+  }
+  
+  /* Responsive styling */
+  @media (max-width: 576px) {
+    .input-label {
+      font-size: 13px;
+    }
+    
+    .input {
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+    
+    .input-sm .input {
+      padding: 3px 6px;
+      font-size: 11px;
+    }
+    
+    .input-lg .input {
+      padding: 10px 14px;
+      font-size: 15px;
+    }
+    
+    .input-message {
+      font-size: 11px;
+    }
+  }

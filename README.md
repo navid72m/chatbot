@@ -1,314 +1,164 @@
-# Advanced RAG System with Knowledge Graph Integration
+# Local LLM Chatbot with Advanced RAG Capabilities
 
-This project extends a standard Retrieval-Augmented Generation (RAG) chatbot with advanced features to reduce hallucination and improve accuracy:
+This project is a **fully local document chatbot** powered by Large Language Models (LLMs). It allows users to upload PDFs and ask questions — all without sending data to external servers.
 
-- **Knowledge Graph Integration**: Captures entity relationships in Neo4j to enhance retrieval
-- **Chain-of-Thought Reasoning**: Implements explicit reasoning steps before answering
-- **Multi-hop Reasoning**: Breaks complex queries into sub-questions
-- **Hybrid Retrieval**: Combines vector search with graph traversal for better document retrieval
-- **Answer Verification**: Cross-checks generated answers against source material
+---
 
-## Architecture Overview
+## ✨ Features
 
-![Advanced RAG Architecture](https://raw.githubusercontent.com/yourusername/advanced-rag-system/main/docs/architecture.svg)
+- **Local LLM Inference**: Runs quantized `.gguf` models (e.g. Mistral) using `llama.cpp`
+- **PDF Upload & Chunking**: Parses PDFs into context-aware chunks for retrieval
+- **Vector Search**: Embeds chunks using SentenceTransformers & retrieves top-K relevant passages
+- **Knowledge Graph Integration**: Uses Neo4j to capture entities and relationships between concepts
+- **Chain-of-Thought Reasoning**: LLM breaks down steps before answering
+- **Multi-hop Reasoning**: Handles complex queries by chaining sub-questions
+- **Answer Verification**: Validates responses against retrieved sources
+
+---
+
+## 🧠 Architecture
 
 ```
-┌───────────────────┐     ┌────────────────────┐
-│                   │     │                    │
-│    Documents      │────▶│  Document          │
-│                   │     │  Processor         │
-└───────────────────┘     └──────┬─────────────┘
-                                 │
-                                 ▼
-      ┌────────────────────────────────────────┐
-      │                                        │
-      ▼                                        ▼
-┌───────────────┐                    ┌─────────────────┐
-│               │                    │                 │
-│ Vector Store  │                    │ Knowledge Graph │
-│ (ChromaDB)    │                    │ (Neo4j)         │
-│               │                    │                 │
-└───────┬───────┘                    └────────┬────────┘
-        │                                     │
-        ▼                                     ▼
-┌───────────────┐                    ┌─────────────────┐
-│               │                    │                 │
-│Vector Retrieval│                    │ Graph Retrieval │
-│               │                    │                 │
-└───────┬───────┘                    └────────┬────────┘
-        │                                     │
-        └─────────────────┬──────────────────┘
-                          │
-                          ▼
-                  ┌────────────────┐       ┌─────────────────┐
-                  │                │       │                 │
-                  │Hybrid Retriever│──────▶│Chain-of-Thought │
-                  │                │       │Reasoning        │
-                  └────────────────┘       └────────┬────────┘
-                                                    │
-                                                    ▼
-                                           ┌─────────────────┐
-                                           │                 │
-                                           │   Multi-hop     │
-                                           │   Reasoning     │
-                                           │                 │
-                                           └────────┬────────┘
-                                                    │
-                                                    ▼
-                                           ┌─────────────────┐
-                                           │                 │
-                                           │    Answer       │
-                                           │  Verification   │
-                                           │                 │
-                                           └────────┬────────┘
-                                                    │
-                                                    ▼
-                                           ┌─────────────────┐
-                                           │                 │
-                                           │ LLM Interface   │
-                                           │   (Ollama)      │
-                                           │                 │
-                                           └────────┬────────┘
-                                                    │
-                                                    ▼
-                                           ┌─────────────────┐
-                                           │                 │
-                                           │  Final Answer   │
-                                           │                 │
-                                           └─────────────────┘
+User ─┬─▶ Upload PDF ─────┬────▶ Document Processor
+     │                   │
+     │                   └────▶ Chunk & Embed
+     │                           │
+     │                 ┌────────┴──────┐
+     │                 ▼               ▼
+     │         Vector Store         Knowledge Graph
+     │             │                     │
+     │             └────┬────┬──────────┘
+     │                  ▼    ▼
+     │           Hybrid Retriever
+     │                  │
+     │          Chain-of-Thought
+     │                  │
+     │             Final Answer
+     ▼
+   Chat UI (Electron)
 ```
 
-The system integrates three key components:
+---
 
-1. **Vector Store**: Semantic search using Chroma and sentence transformers
-2. **Knowledge Graph**: Entity and relationship extraction with Neo4j
-3. **Reasoning Layer**: Chain-of-thought and multi-hop reasoning with LLMs
+## 🗂️ Key Components
 
-## Components
+| File | Purpose |
+|------|---------|
+| `app_integration.py` | FastAPI server wiring all components |
+| `llm_interface.py` | Loads GGUF model using llama.cpp via `ctypes` |
+| `vector_store.py` | Chroma vector DB wrapper with embedding logic |
+| `knowledge_graph.py` | spaCy + Neo4j entity & relation extractor |
+| `chain_of_thought.py` | Implements CoT + reasoning parsing |
+| `document_processor.py` | PDF chunking, cleaning, and metadata attachment |
+| `frontend/` | Electron + Vite React app to interact with backend |
 
-### Core Files
+---
 
-- `advanced_rag.py`: Main implementation of the Advanced RAG system
-- `knowledge_graph.py`: Neo4j integration for entity and relationship management
-- `chain_of_thought.py`: Implementation of chain-of-thought reasoning
-- `hybrid_retriever.py`: Combined retrieval from vector store and knowledge graph
-- `app_integration.py`: FastAPI server integrating all components
+## 🚀 Getting Started
 
-### Support Files
+### ✅ Prerequisites
 
-- `vector_store.py`: Vector store implementation using Chroma
-- `document_processor.py`: Document processing and chunking
-- `llm_interface.py`: Interface to Ollama LLM models
-- `setup_advanced_rag.py`: Setup script for dependencies
-- `example_usage.py`: Example demonstration script
+- Python 3.10+
+- Node.js 18+
+- Neo4j installed locally
+- `llama.cpp` compiled as shared library (`libllama.dylib`)
+- A `.gguf` model like `mistral-7b-instruct-v0.1.Q4_K_M.gguf`
 
-## Setup Instructions
-
-### Prerequisites
-
-- Python 3.9+
-- Neo4j (for knowledge graph features)
-- Ollama (for LLM access)
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/advanced-rag-system.git
-   cd advanced-rag-system
-   ```
-
-2. Run the setup script:
-   ```bash
-   python setup_advanced_rag.py
-   ```
-
-3. Ensure Neo4j is running:
-   ```bash
-   # You can use Docker for easy setup
-   docker run -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j
-   ```
-
-4. Ensure Ollama is running with the required model:
-   ```bash
-   ollama serve
-   ollama pull mistral
-   ```
-
-5. Start the API server:
-   ```bash
-   python app_integration.py
-   ```
-
-## Usage Examples
-
-### Basic Query
-
-```python
-from advanced_rag import AdvancedRAG
-from vector_store import VectorStore
-from knowledge_graph import KnowledgeGraph
-from chain_of_thought import ChainOfThoughtReasoner
-
-# Initialize components
-vector_store = VectorStore()
-knowledge_graph = KnowledgeGraph()
-reasoner = ChainOfThoughtReasoner()
-
-# Create Advanced RAG instance
-rag = AdvancedRAG(
-    vector_store=vector_store,
-    knowledge_graph=knowledge_graph,
-    reasoner=reasoner,
-    model="mistral"
-)
-
-# Add documents
-documents = [...] # Your documents here
-rag.add_documents(documents)
-
-# Query
-response = rag.answer_query("What causes climate change?")
-print(response["answer"])
-```
-
-### API Usage
-
-The system exposes a FastAPI interface:
+### 🛠️ Setup (Backend)
 
 ```bash
-# Upload a document
-curl -X POST -F "file=@document.pdf" http://localhost:8000/upload
+# Clone the repo
+git clone https://github.com/yourname/local-llm-chatbot.git
+cd local-llm-chatbot/backend
 
-# Query
-curl -X POST -H "Content-Type: application/json" \
-    -d '{"query": "What is climate change?", "use_advanced_rag": true}' \
-    http://localhost:8000/query
+# Install Python deps
+pip install -r requirements.txt
+
+# Set Neo4j credentials
+export NEO4J_USERNAME=neo4j
+export NEO4J_PASSWORD=your_password
+
+# Start backend
+python app_integration.py
 ```
 
-## Configuration Options
+### 🖥️ Setup (Frontend)
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `use_cot` | Enable chain-of-thought reasoning | `True` |
-| `use_kg` | Enable knowledge graph features | `True` |
-| `verify_answers` | Cross-check answers against sources | `True` |
-| `use_multihop` | Enable breaking complex queries | `True` |
-| `max_hops` | Maximum path length in knowledge graph | `2` |
-| `vector_weight` | Weight for vector search results | `0.7` |
-| `kg_weight` | Weight for knowledge graph results | `0.3` |
-| `max_vector_results` | Maximum vector search results | `5` |
-| `max_kg_results` | Maximum knowledge graph results | `3` |
-| `temperature` | LLM temperature parameter | `0.7` |
+```bash
+cd ../frontend
+npm install
+npm run dev  # or: npm run build && npm start
+```
 
-## API Endpoints
+---
 
-The system provides the following API endpoints:
+## 💬 API Quick Reference
 
-### Document Management
+| Endpoint | Description |
+|----------|-------------|
+| `POST /upload` | Upload and process a PDF |
+| `POST /query` | Ask a question using hybrid RAG |
+| `GET /models` | List available local models |
+| `GET /advanced-rag/features` | View enabled features |
 
-- `POST /upload`: Upload a document for processing
-- `GET /`: Root endpoint with API information
+---
 
-### Query Processing
+## 🧪 Example Usage
 
-- `POST /query`: Query documents with optional advanced RAG features
-- `GET /models`: List available Ollama models
-- `GET /quantization-options`: Get available quantization options
+### Python
+```python
+from advanced_rag import AdvancedRAG
 
-### Knowledge Graph Endpoints
+rag = AdvancedRAG(...)
+rag.add_documents([doc1, doc2])
+result = rag.answer_query("What is the main finding?")
+print(result["answer"])
+```
 
-- `GET /knowledge-graph/entities`: Get entities extracted from a query
-- `POST /knowledge-graph/entity-graph`: Get a subgraph around specified entities
-- `GET /knowledge-graph/entity/{entity_name}/related`: Get entities related to a specific entity
-- `GET /knowledge-graph/path`: Find paths between two entities
+### Curl
+```bash
+curl -X POST -F "file=@report.pdf" http://localhost:8000/upload
 
-### Configuration
+curl -X POST -H "Content-Type: application/json" \
+     -d '{"query": "What is the report summary?"}' \
+     http://localhost:8000/query
+```
 
-- `POST /config/rag`: Update Advanced RAG configuration
-- `GET /advanced-rag/features`: Get information about available features
+---
 
-### Debug
+## 🛠️ Configuration Flags
 
-- `POST /debug/analyze-query`: Debug endpoint to analyze a query
+| Flag | Description | Default |
+|------|-------------|---------|
+| `use_cot` | Enable step-by-step reasoning | `True` |
+| `use_kg` | Enable Neo4j knowledge graph | `True` |
+| `use_multihop` | Break down complex queries | `True` |
+| `verify_answers` | Verify answer against sources | `True` |
+| `temperature` | Model creativity level | `0.7` |
 
-## How It Works
+---
 
-### Knowledge Graph Integration
+## 📈 Performance Tips
 
-The system extracts entities and relationships from documents:
+- Run models with 4-bit quantization (`Q4_K_M`) for faster inference
+- Use ChromaDB with persistence for large corpora
+- Enable `llama.cpp` Metal backend for M1/M2 Macs
+- Pre-index documents for better first-response latency
 
-1. **Entity Extraction**: Uses spaCy NLP to identify people, organizations, locations, and concepts
-2. **Relationship Extraction**: Identifies subject-verb-object patterns to establish connections
-3. **Graph Storage**: Stores everything in Neo4j with proper indexing for fast retrieval
+---
 
-During retrieval, the system:
+## 🚧 Limitations
 
-1. Extracts entities from the query
-2. Finds related entities in the knowledge graph
-3. Retrieves documents mentioning these entities
-4. Identifies paths between entities mentioned in the query
-5. Combines with vector search results
+- No GPU acceleration (yet)
+- spaCy extraction may miss domain-specific terms
+- CoT & multihop increase latency
+- Basic Electron UI (for now)
 
-### Chain-of-Thought Reasoning
 
-The system implements structured reasoning:
 
-1. Identifies key entities and concepts in the question
-2. Determines what specific information is being requested
-3. Finds relevant information in the context
-4. Connects information to develop a reasoned answer
-5. Checks for assumptions or limitations
-6. Provides the final answer based on explicit reasoning
+---
 
-### Multi-hop Reasoning for Complex Queries
+## 🪪 License
 
-For complex questions, the system:
+MIT License
 
-1. Decomposes the question into 2-4 simpler sub-questions
-2. Answers each sub-question sequentially
-3. Synthesizes the final answer using all intermediate answers
-
-### Answer Verification
-
-To reduce hallucination, the system:
-
-1. Generates an answer based on retrieved documents
-2. Cross-checks each claim against the source material
-3. Identifies unsupported claims and contradictions
-4. Assigns a confidence score (HIGH/MEDIUM/LOW)
-5. Highlights limitations or uncertainties in the answer
-
-## Performance Considerations
-
-- **Memory Usage**: The system requires significant RAM, especially with larger knowledge graphs
-- **Neo4j Performance**: For large document collections, proper Neo4j indexing is crucial
-- **LLM Latency**: Chain-of-thought and multi-hop reasoning involve multiple LLM calls, increasing response time
-- **Entity Extraction**: spaCy processing can be CPU-intensive for large documents
-
-## Limitations and Future Work
-
-- **Knowledge Graph Quality**: Entity and relationship extraction is imperfect and may miss complex relationships
-- **Cross-document Reasoning**: Current implementation has limited ability to connect information across many documents
-- **Temporal Reasoning**: Limited support for time-based relationships and reasoning
-- **Question Complexity**: Very complex questions may still yield incomplete answers
-
-Future improvements could include:
-
-- Implementing more sophisticated entity and relationship extraction
-- Adding temporal awareness to the knowledge graph
-- Supporting multilingual documents and queries
-- Implementing more advanced multi-document reasoning strategies
-- Adding interactive clarification for ambiguous queries
-
-## Contributors
-
-This project was developed by [Your Team Name] with contributions from:
-
-- Your Name - Core architecture and integration
-- Contributor 1 - Knowledge graph implementation
-- Contributor 2 - Chain-of-thought reasoning
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
