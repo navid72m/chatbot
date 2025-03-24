@@ -194,6 +194,7 @@ async def query_document(request: QueryRequest):
                     "response": "I don't have enough information to answer this question based on the documents you've provided."
                 }
             
+            logger.info(f"Relevant chunks: {relevant_chunks}")
             # Build context from relevant chunks
             context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
             

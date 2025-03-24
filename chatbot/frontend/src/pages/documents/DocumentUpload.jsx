@@ -8,7 +8,7 @@ const DocumentChat = ({ documentId }) => {
   const [loading, setLoading] = useState(false);
   const [advancedOptions, setAdvancedOptions] = useState({
     use_advanced_rag: false,
-    use_cot: true,
+    use_cot: false,
     use_kg: true,
     verify_answers: true,
     use_multihop: true,
