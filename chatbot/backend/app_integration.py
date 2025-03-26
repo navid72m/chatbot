@@ -71,6 +71,7 @@ class QueryRequest(BaseModel):
     use_kg: bool = True
     verify_answers: bool = True
     use_multihop: bool = True
+    current_document: Optional[str] = None
 
 class RAGConfigRequest(BaseModel):
     use_advanced_rag: bool = True
@@ -141,7 +142,7 @@ async def upload_document(file: UploadFile = File(...)):
             chunk.metadata["source"] = file.filename
             chunk.metadata["chunk_id"] = i
         
-        knowledge_graph.process_documents(chunks)
+        # knowledge_graph.process_documents(chunks)
         
         return {
             "success": True,
@@ -169,7 +170,7 @@ async def query_document(request: QueryRequest):
         advanced_rag.model = request.model
         advanced_rag.temperature = request.temperature
         
-        if request.use_advanced_rag:
+        if not request.use_advanced_rag:
             # Use the advanced RAG system
             logger.info(f"Using advanced RAG for query: {request.query}")
             response = advanced_rag.answer_query(request.query)
@@ -186,17 +187,55 @@ async def query_document(request: QueryRequest):
             # Fall back to the original implementation
             logger.info(f"Using standard RAG for query: {request.query}")
             
-            # Retrieve relevant document chunks from the vector store
-            relevant_chunks = vector_store.search(request.query, k=request.context_window)
+            # Get the current document filename from the request
+            current_document = request.current_document
+            
+            if not current_document:
+                return {
+                    "response": "Please upload a document first before querying.",
+                    "error": "No document selected"
+                }
+            
+            # Retrieve relevant document chunks from the vector store, filtered by current document
+            relevant_chunks = vector_store.search(
+                query=request.query, 
+                k=request.context_window,
+                filter={"source": current_document}  # Filter by current document
+            )
             
             if not relevant_chunks:
                 return {
-                    "response": "I don't have enough information to answer this question based on the documents you've provided."
+                    "response": "I don't have enough information to answer this question based on the current document.",
+                    "document": current_document
                 }
             
-            logger.info(f"Relevant chunks: {relevant_chunks}")
-            # Build context from relevant chunks
-            context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
+            logger.info(f"Relevant chunks from document {current_document}: {relevant_chunks}")
+            # Build context from relevant chunks with token limit
+            context_parts = []
+            total_tokens = 0
+            max_tokens = 4096  # Maximum context size
+            
+            for chunk in relevant_chunks:
+                text = chunk.page_content.strip()
+                
+                # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
+                chunk_tokens = len(text) // 4
+                
+                # If adding this chunk would exceed the limit, truncate it
+                if total_tokens + chunk_tokens > max_tokens:
+                    remaining_tokens = max_tokens - total_tokens
+                    # Truncate text to fit remaining tokens
+                    text = text[:remaining_tokens * 4] + "..."
+                    logger.warning(f"Truncated chunk to fit within token limit")
+                
+                context_parts.append(text)
+                total_tokens += chunk_tokens
+                
+                # If we've reached the token limit, stop adding chunks
+                if total_tokens >= max_tokens:
+                    break
+            
+            context = "\n\n".join(context_parts)
             
             # Query the LLM via Ollama with quantization parameter
             response = query_ollama(
@@ -210,6 +249,7 @@ async def query_document(request: QueryRequest):
             return {
                 "response": response,
                 "sources": [chunk.metadata.get("source", "Unknown") for chunk in relevant_chunks],
+                "document": current_document,
                 "advanced_features": False
             }
             

@@ -3,7 +3,8 @@ from typing import List, Optional, Dict, Any
 import ctypes
 import os
 import numpy as np
-from llama_cpp import Llama
+# from llama_cpp import Llama
+import requests
 
 
 
@@ -124,36 +125,19 @@ logger = logging.getLogger(__name__)
 #         except Exception as e:
 #             logger.error(f"Cleanup error: {e}")
 
-def query_ollama(
-    query: str, 
-    context: str = "", 
-    model: str = "mistral", 
-    temperature: float = 0.7,
-    quantization: str = "4bit"
-) -> str:
-    """
-    Unified query interface for language models
-    
-    Args:
-        query: User's query
-        context: Additional context information
-        model: Model name
-        temperature: Sampling temperature
-        quantization: Quantization level (not used for GGUF, kept for API compatibility)
-    
-    Returns:
-        Model-generated response
-    """
-    try:
-        # Determine model path (update with your actual path)
-        model_path = os.path.expanduser("~/startup/chatbot/external/mistral-7b-instruct-v0.1.Q4_K_M.gguf")
-        
-        # Ensure model path exists
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model not found at {model_path}")
-        
-        # Prepare full prompt with context
-        full_prompt = f"""
+import requests
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+def stream_ollama_response(
+    query: str,
+    context: str = "",
+    model: str = "deepseek-r1",
+    temperature: float = 0.7
+):
+    full_prompt = f"""
 Context information is below.
 ---------------------
 {context}
@@ -163,45 +147,50 @@ Given the context information and not prior knowledge, answer the question.
 
 Question: {query}
 """.strip()
-        
-        # Initialize model
-        # llm = LlamaCppModel(model_path=model_path)
-        
-        # # Generate response
-        # response = llm.generate(
-        #     prompt=full_prompt, 
-        #     temperature=temperature
-        # )
-        llm = Llama(
-        model_path="/Users/seyednavidmirnourilangeroudi/startup/chatbot/external/mistral-7b-instruct-v0.1.Q4_K_M.gguf",
-        n_ctx=4096,
-        n_threads=4  # Adjust based on CPU
-        )
 
-        response = llm(
-            prompt=full_prompt,
-            max_tokens=400,
-            temperature=0.7,
-        )
+    payload = {
+        "model": model,
+        "prompt": full_prompt,
+        "stream": True,
+        "options": {
+            "temperature": temperature
+        }
+    }
 
-# print(response["choices"][0]["text"])
-        
-        return response
-    
+    try:
+        with requests.post("http://localhost:11434/api/generate", json=payload, stream=True) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        chunk = json.loads(line.decode("utf-8"))
+                        yield chunk.get("response", "")
+                    except json.JSONDecodeError:
+                        continue
     except Exception as e:
-        logger.error(f"Query error: {e}")
-        return f"Error generating response: {str(e)}"
+        yield f"[Streaming error] {str(e)}"
+
 
 def list_ollama_models() -> List[str]:
     """
-    List available models
+    List available Ollama models
     
     Returns:
         List of model names
     """
-    # In a real implementation, scan the Ollama models directory
-    return [
-        "mistral",
-        "llama3",
-        "phi"
-    ]
+    try:
+        # Query Ollama API for available models
+        response = requests.get("http://localhost:11434/api/tags")
+        response.raise_for_status()
+        
+        # Parse the response
+        result = response.json()
+        
+        # Extract model names
+        models = [model["name"] for model in result.get("models", [])]
+        
+        return models
+        
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        return []
