@@ -1,0 +1,1 @@
+FROM ./models/deepseek-r1.Q4_K_M.gguf
