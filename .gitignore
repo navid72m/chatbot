@@ -217,3 +217,14 @@ uploads/
 data/
 models/
 
+
+*.spec
+*.sh
+*.log
+*.dmg
+*.exe
+venv-build/
+build/
+release/
+external/
+
