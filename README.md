@@ -1,22 +1,26 @@
-# Local LLM Chatbot with Advanced RAG Capabilities
+# 🧠 Local LLM Desktop Chatbot with Advanced RAG & Ollama Integration
 
-This project is a **fully local document chatbot** powered by Large Language Models (LLMs). It allows users to upload PDFs and ask questions — all without sending data to external servers.
+This project is a **fully local desktop application** that enables secure, offline document-based chat using Large Language Models (LLMs). It uses **Ollama** to run quantized models (like `deepseek-coder` or `mistral`) and supports advanced Retrieval-Augmented Generation (RAG) features such as:
 
----
-
-## ✨ Features
-
-- **Local LLM Inference**: Runs quantized `.gguf` models (e.g. Mistral) using `llama.cpp`
-- **PDF Upload & Chunking**: Parses PDFs into context-aware chunks for retrieval
-- **Vector Search**: Embeds chunks using SentenceTransformers & retrieves top-K relevant passages
-- **Knowledge Graph Integration**: Uses Neo4j to capture entities and relationships between concepts
-- **Chain-of-Thought Reasoning**: LLM breaks down steps before answering
-- **Multi-hop Reasoning**: Handles complex queries by chaining sub-questions
-- **Answer Verification**: Validates responses against retrieved sources
+- 🧾 Multi-format document upload
+- 🔍 Vector + knowledge graph-based hybrid search
+- 🔄 Chain-of-thought reasoning
+- ✅ Answer verification against retrieved context
 
 ---
 
-## 🧠 Architecture
+## ✨ Key Features
+
+- **🔐 100% Local Inference** via [Ollama](https://ollama.com)
+- **📄 Multi-format Upload**: PDF, DOCX, TXT, CSV, XLSX
+- **📚 Hybrid RAG**: Combines vector search (ChromaDB) + Neo4j knowledge graph
+- **🧠 CoT & Multihop Reasoning**: Breaks down complex queries
+- **📏 Answer Verification**: Validates LLM output against sources
+- **🧑‍💻 Electron App**: Cross-platform frontend (macOS, Windows)
+
+---
+
+## 🧱 Architecture Diagram
 
 ```
 User ─┬─▶ Upload PDF ─────┬────▶ Document Processor
@@ -31,26 +35,40 @@ User ─┬─▶ Upload PDF ─────┬────▶ Document Processo
      │                  ▼    ▼
      │           Hybrid Retriever
      │                  │
-     │          Chain-of-Thought
-     │                  │
-     │             Final Answer
+     │       ┌──────────┴────────────┐
+     │       ▼                       ▼
+     │   Answer Verifier        Chain-of-Thought
+     │       │                       │
+     │       └──────────┬────────────┘
+     │                  ▼
+     │          Local LLM via Ollama
      ▼
-   Chat UI (Electron)
+   Electron Desktop App
 ```
 
 ---
 
 ## 🗂️ Key Components
 
-| File | Purpose |
-|------|---------|
-| `app_integration.py` | FastAPI server wiring all components |
-| `llm_interface.py` | Loads GGUF model using llama.cpp via `ctypes` |
-| `vector_store.py` | Chroma vector DB wrapper with embedding logic |
-| `knowledge_graph.py` | spaCy + Neo4j entity & relation extractor |
-| `chain_of_thought.py` | Implements CoT + reasoning parsing |
-| `document_processor.py` | PDF chunking, cleaning, and metadata attachment |
-| `frontend/` | Electron + Vite React app to interact with backend |
+| File / Dir | Description |
+|------------|-------------|
+| `backend/` | FastAPI + Python backend with RAG logic |
+| `electron/` | Electron main process, starts backend & Ollama |
+| `frontend/` | Vite + React UI for chatting, uploading |
+| `ollama/` | Local LLM runner and model container |
+| `Modelfile` | Ollama configuration file (base model) |
+
+---
+
+## 🧪 Tech Stack
+
+- 🧠 **LLM Inference**: [Ollama](https://ollama.com) with quantized `.gguf` models
+- 🧾 **Document Parsing**: PyMuPDF, Pandas
+- 💡 **Embeddings**: `sentence-transformers`
+- 🔍 **Vector DB**: ChromaDB
+- 🧬 **Knowledge Graph**: spaCy + Neo4j
+- 🧩 **Frontend**: React + Vite (Electron)
+- 🐍 **Backend**: FastAPI with modular RAG pipeline
 
 ---
 
@@ -60,105 +78,91 @@ User ─┬─▶ Upload PDF ─────┬────▶ Document Processo
 
 - Python 3.10+
 - Node.js 18+
-- Neo4j installed locally
-- `llama.cpp` compiled as shared library (`libllama.dylib`)
-- A `.gguf` model like `mistral-7b-instruct-v0.1.Q4_K_M.gguf`
+- Neo4j running locally
+- Ollama installed (or embedded binary in `electron/bin/ollama`)
 
-### 🛠️ Setup (Backend)
+### 🛠️ Backend Setup
 
 ```bash
-# Clone the repo
-git clone https://github.com/yourname/local-llm-chatbot.git
-cd local-llm-chatbot/backend
-
-# Install Python deps
+cd backend
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-
-# Set Neo4j credentials
 export NEO4J_USERNAME=neo4j
 export NEO4J_PASSWORD=your_password
-
-# Start backend
-python app_integration.py
+python app.py  # Or use compiled backend binary
 ```
 
-### 🖥️ Setup (Frontend)
+### 🖥️ Frontend & Electron App
 
 ```bash
-cd ../frontend
+cd frontend
 npm install
-npm run dev  # or: npm run build && npm start
+npm run build  # Build static frontend assets
+
+# In project root
+npm run electron:dev  # For dev
+npm run electron:build  # For packaged macOS/Windows app
 ```
 
 ---
 
-## 💬 API Quick Reference
+## 📦 Packaging for Distribution
+
+Ensure `electron/bin/backend` and `electron/bin/ollama` exist and are executable.
+
+```bash
+npm run electron:build  # Generates DMG/EXE in /release/
+```
+
+---
+
+## 🧪 API Reference
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /upload` | Upload and process a PDF |
-| `POST /query` | Ask a question using hybrid RAG |
-| `GET /models` | List available local models |
-| `GET /advanced-rag/features` | View enabled features |
+| `GET /health` | Check server health |
+| `POST /upload` | Upload and embed document |
+| `POST /query` | Ask a question to LLM |
+| `POST /configure` | Change reasoning settings |
+| `GET /models` | List supported local models |
 
 ---
 
-## 🧪 Example Usage
-
-### Python
-```python
-from advanced_rag import AdvancedRAG
-
-rag = AdvancedRAG(...)
-rag.add_documents([doc1, doc2])
-result = rag.answer_query("What is the main finding?")
-print(result["answer"])
-```
-
-### Curl
-```bash
-curl -X POST -F "file=@report.pdf" http://localhost:8000/upload
-
-curl -X POST -H "Content-Type: application/json" \
-     -d '{"query": "What is the report summary?"}' \
-     http://localhost:8000/query
-```
-
----
-
-## 🛠️ Configuration Flags
+## ⚙️ Configuration Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `use_cot` | Enable step-by-step reasoning | `True` |
 | `use_kg` | Enable Neo4j knowledge graph | `True` |
-| `use_multihop` | Break down complex queries | `True` |
-| `verify_answers` | Verify answer against sources | `True` |
-| `temperature` | Model creativity level | `0.7` |
+| `use_cot` | Enable chain-of-thought | `True` |
+| `use_multihop` | Multi-hop retrieval | `True` |
+| `verify_answers` | Answer validation | `True` |
+| `temperature` | Model creativity | `0.7` |
+| `context_window` | How many chunks to pass to model | `10` |
+
+---
+
+## 🛠️ Troubleshooting
+
+- **App launches but shows blank screen**: Check index.html paths in `vite.config.js`
+- **Backend not connecting**: Ensure the health check route `/health` returns `200`
+- **Port conflicts**: Make sure port 8000 isn’t already in use
+- **Error: spawn backend ENOENT**: Ensure binary exists and is executable
 
 ---
 
 ## 📈 Performance Tips
 
-- Run models with 4-bit quantization (`Q4_K_M`) for faster inference
-- Use ChromaDB with persistence for large corpora
-- Enable `llama.cpp` Metal backend for M1/M2 Macs
-- Pre-index documents for better first-response latency
+- Use 4-bit quantized models like `mistral.Q4_K_M`
+- Pre-warm documents into ChromaDB
+- Set `Ollama` to use Metal backend (for macOS M1/M2)
+- Reduce `context_window` to speed up answers
 
 ---
 
-## 🚧 Limitations
+## 📜 License
 
-- No GPU acceleration (yet)
-- spaCy extraction may miss domain-specific terms
-- CoT & multihop increase latency
-- Basic Electron UI (for now)
-
-
+MIT License — All documents stay local.
 
 ---
 
-## 🪪 License
-
-MIT License
-
+Let me know if you'd like me to embed actual screenshots, diagnostic logs, or contribution guidelines.

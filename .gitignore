@@ -58,3 +58,84 @@ chatbot/backend/uploads/
 *.jpg
 *.jpeg
 *.png
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Virtual environments
+env/
+venv/
+.venv/
+
+# Node modules
+node_modules/
+
+# VSCode
+.vscode/
+
+# Mac system files
+.AppleDouble
+.LSOverride
+
+# Backup files
+*~
+*.bak
+*.swp
+*.tmp
+
+# Compiled files
+*.class
+*.o
+*.out
+*.exe
+
+# Build directories
+build/
+dist/
+*.egg-info/
+
+# Large data or models (customize as needed)
+*.h5
+*.ckpt
+*.pth
+*.pkl
+*.npy
+*.npz
+*.gz
+*.tar
+*.zip
+
+# Environment files
+.env
+.env.*
+
+# Coverage/test reports
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+*.py,cover
+.cache
+nosetests.xml
+pytest_cache/
+
+# Ignore JetBrains IDEs (PyCharm, IntelliJ)
+.idea/
+
+# Ignore your own output folder if applicable
+output/
+results/
+logs/
+tmp/
