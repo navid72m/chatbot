@@ -58,3 +58,173 @@ chatbot/backend/uploads/
 *.jpg
 *.jpeg
 *.png
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Virtual environments
+env/
+venv/
+.venv/
+
+# Node modules
+node_modules/
+
+# VSCode
+.vscode/
+
+# Mac system files
+.AppleDouble
+.LSOverride
+
+# Backup files
+*~
+*.bak
+*.swp
+*.tmp
+
+# Compiled files
+*.class
+*.o
+*.out
+*.exe
+
+# Build directories
+build/
+dist/
+*.egg-info/
+
+# Large data or models (customize as needed)
+*.h5
+*.ckpt
+*.pth
+*.pkl
+*.npy
+*.npz
+*.gz
+*.tar
+*.zip
+
+# Environment files
+.env
+.env.*
+
+# Coverage/test reports
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+*.py,cover
+.cache
+nosetests.xml
+pytest_cache/
+
+# Ignore JetBrains IDEs (PyCharm, IntelliJ)
+.idea/
+
+# Ignore your own output folder if applicable
+output/
+results/
+logs/
+tmp/
+
+# ------------------------------
+# OS-specific files
+# ------------------------------
+.DS_Store
+Thumbs.db
+
+# ------------------------------
+# Python / FastAPI
+# ------------------------------
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+*.log
+*.db
+*.sqlite3
+
+# Virtual environments
+env/
+venv/
+.venv/
+
+# Pipenv / Poetry
+Pipfile.lock
+poetry.lock
+
+# Env files
+.env
+.env.*
+
+# Test and coverage reports
+htmlcov/
+.coverage
+.cache/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# ------------------------------
+# Node / React / Electron
+# ------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+.cache/
+*.tsbuildinfo
+
+# Electron
+*.asar
+out/
+electron-builder.yaml
+
+# ------------------------------
+# Misc / Editor configs
+# ------------------------------
+.vscode/
+.idea/
+*.swp
+*.tmp
+*.bak
+
+# ------------------------------
+# Custom project directories
+# ------------------------------
+logs/
+tmp/
+output/
+results/
+uploads/
+data/
+models/
+
+
+*.spec
+*.sh
+*.log
+*.dmg
+*.exe
+venv-build/
+build/
+release/
+external/
+

@@ -1,317 +1,179 @@
-# knowledge_graph.py - Neo4j knowledge graph integration for enhanced RAG
+"""
+A simplified knowledge graph module that doesn't rely on spaCy.
+This is meant to be a temporary solution for packaging purposes.
+"""
+import os
+import json
 import logging
-from typing import List, Dict, Optional, Set, Tuple
-from neo4j import GraphDatabase
-import spacy
-from langchain.docstore.document import Document
+import re
+from typing import List, Dict, Any, Tuple, Set
 
-# Set up logging
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class KnowledgeGraph:
-    """Knowledge graph integration using Neo4j for enhanced RAG capabilities"""
+    """A simplified knowledge graph that doesn't rely on spaCy."""
     
-    def __init__(self, uri="bolt://localhost:7687", username="neo4j", password="password"):
-        """Initialize the knowledge graph connection"""
-        self.uri = uri
-        self.username = username
-        self.password = password
-        self.driver = None
+    def __init__(self, storage_path: str = "knowledge_db"):
+        """Initialize the simple knowledge graph.
         
-        # Load NLP model for entity extraction
-        try:
-            self.nlp = spacy.load("en_core_web_md")
-            logger.info("Loaded spaCy NLP model for entity extraction")
-        except Exception as e:
-            logger.error(f"Error loading spaCy model: {str(e)}")
-            logger.info("Downloading spaCy model...")
-            spacy.cli.download("en_core_web_md")
-            self.nlp = spacy.load("en_core_web_md")
+        Args:
+            storage_path: Directory to persist the knowledge graph.
+        """
+        self.storage_path = storage_path
+        os.makedirs(storage_path, exist_ok=True)
         
-        # Connect to Neo4j
-        self._connect()
+        self.graph_file = os.path.join(storage_path, "knowledge_graph.json")
+        self.entities: Dict[str, Dict[str, Any]] = {}
+        self.relationships: List[Dict[str, Any]] = []
+        
+        # Load existing knowledge graph if it exists
+        if os.path.exists(self.graph_file):
+            try:
+                with open(self.graph_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.entities = data.get("entities", {})
+                    self.relationships = data.get("relationships", [])
+                logger.info(f"Loaded knowledge graph with {len(self.entities)} entities and {len(self.relationships)} relationships")
+            except Exception as e:
+                logger.error(f"Error loading knowledge graph: {e}")
     
-    def _connect(self):
-        """Establish connection to Neo4j database"""
-        try:
-            self.driver = GraphDatabase.driver(self.uri, auth=(self.username, self.password))
-            logger.info(f"Connected to Neo4j at {self.uri}")
+    def _save_graph(self) -> None:
+        """Save the knowledge graph to disk."""
+        data = {
+            "entities": self.entities,
+            "relationships": self.relationships
+        }
+        with open(self.graph_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    
+    def extract_entities(self, text: str) -> List[str]:
+        """Extract entities from text using simple rules.
+        
+        Args:
+            text: Input text.
             
-            # Create constraints and indexes for better performance
-            with self.driver.session() as session:
-                # Create constraints on Entity nodes
-                session.run("CREATE CONSTRAINT entity_name IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE")
-                # Create constraint on Document nodes
-                session.run("CREATE CONSTRAINT document_id IF NOT EXISTS FOR (d:Document) REQUIRE d.doc_id IS UNIQUE")
+        Returns:
+            List of extracted entities.
+        """
+        # Simple entity extraction using capitalized words as a heuristic
+        # This is a simplified approach and not as accurate as spaCy
+        words = re.findall(r'\b[A-Z][a-zA-Z]*\b', text)
+        
+        # Filter out common words that start with capital letters but aren't entities
+        stop_words = {"I", "The", "A", "An", "This", "That", "These", "Those"}
+        entities = [word for word in words if word not in stop_words]
+        
+        return list(set(entities))
+    
+    def add_document(self, document: str, source: str = "unknown") -> None:
+        """Process a document and add entities and relationships to the knowledge graph.
+        
+        Args:
+            document: Document text.
+            source: Source of the document.
+        """
+        # Extract entities
+        entities = self.extract_entities(document)
+        
+        # Add entities to the graph
+        for entity in entities:
+            if entity not in self.entities:
+                self.entities[entity] = {
+                    "name": entity,
+                    "sources": [source],
+                    "count": 1
+                }
+            else:
+                if source not in self.entities[entity]["sources"]:
+                    self.entities[entity]["sources"].append(source)
+                self.entities[entity]["count"] += 1
+        
+        # Add co-occurrence relationships
+        for i, entity1 in enumerate(entities):
+            for entity2 in entities[i+1:]:
+                # Check if relationship already exists
+                relationship_exists = False
+                for rel in self.relationships:
+                    if (rel["source"] == entity1 and rel["target"] == entity2) or \
+                       (rel["source"] == entity2 and rel["target"] == entity1):
+                        rel["weight"] += 1
+                        relationship_exists = True
+                        break
                 
-                logger.info("Created Neo4j constraints and indexes")
-        except Exception as e:
-            logger.error(f"Error connecting to Neo4j: {str(e)}")
-            raise
-    
-    def close(self):
-        """Close the Neo4j connection"""
-        if self.driver:
-            self.driver.close()
-            logger.info("Neo4j connection closed")
-    
-    def extract_entities(self, text: str) -> List[Dict]:
-        """Extract entities from text using spaCy"""
-        doc = self.nlp(text)
-        entities = []
+                # Add new relationship if it doesn't exist
+                if not relationship_exists:
+                    self.relationships.append({
+                        "source": entity1,
+                        "target": entity2,
+                        "type": "co-occurrence",
+                        "weight": 1
+                    })
         
-        # Extract named entities
-        for ent in doc.ents:
-            entities.append({
-                "text": ent.text,
-                "label": ent.label_,
-                "start": ent.start_char,
-                "end": ent.end_char
-            })
+        # Save the updated graph
+        self._save_graph()
+    
+    def get_entity(self, entity_name: str) -> Dict[str, Any]:
+        """Get information about an entity.
         
-        # Extract noun chunks for concept entities
-        for chunk in doc.noun_chunks:
-            # Filter out single pronouns and very short chunks
-            if len(chunk.text.split()) > 1 or (len(chunk.text) > 3 and not chunk.text.lower() in ["he", "she", "it", "they", "we", "you"]):
-                entities.append({
-                    "text": chunk.text,
-                    "label": "CONCEPT",
-                    "start": chunk.start_char,
-                    "end": chunk.end_char
+        Args:
+            entity_name: Name of the entity.
+            
+        Returns:
+            Entity information.
+        """
+        return self.entities.get(entity_name, {"name": entity_name, "sources": [], "count": 0})
+    
+    def get_related_entities(self, entity_name: str, max_results: int = 10) -> List[Dict[str, Any]]:
+        """Get entities related to the given entity.
+        
+        Args:
+            entity_name: Name of the entity.
+            max_results: Maximum number of related entities to return.
+            
+        Returns:
+            List of related entities with relationship information.
+        """
+        related = []
+        
+        for rel in self.relationships:
+            if rel["source"] == entity_name:
+                related.append({
+                    "entity": rel["target"],
+                    "relationship": rel["type"],
+                    "weight": rel["weight"]
+                })
+            elif rel["target"] == entity_name:
+                related.append({
+                    "entity": rel["source"],
+                    "relationship": rel["type"],
+                    "weight": rel["weight"]
                 })
         
-        return entities
+        # Sort by weight and limit results
+        related.sort(key=lambda x: x["weight"], reverse=True)
+        return related[:max_results]
     
-    def extract_relationships(self, text: str) -> List[Dict]:
-        """Extract potential relationships between entities"""
-        doc = self.nlp(text)
-        relationships = []
+    def search_entities(self, query: str) -> List[Dict[str, Any]]:
+        """Search for entities matching the query.
         
-        for sent in doc.sents:
-            entities_in_sent = [(e.text, e.start_char, e.end_char, e.label_) for e in sent.ents]
+        Args:
+            query: Search query.
             
-            # Skip if fewer than 2 entities in sentence
-            if len(entities_in_sent) < 2:
-                continue
-                
-            # Extract subject-verb-object patterns
-            for token in sent:
-                if token.dep_ == "ROOT" and token.pos_ == "VERB":
-                    # Find subject
-                    subject = None
-                    for child in token.children:
-                        if child.dep_ in ["nsubj", "nsubjpass"]:
-                            subject = child
-                            break
-                    
-                    # Find object
-                    obj = None
-                    for child in token.children:
-                        if child.dep_ in ["dobj", "pobj", "attr"]:
-                            obj = child
-                            break
-                    
-                    # If we have both subject and object, create relationship
-                    if subject and obj:
-                        # Expand to include compound phrases
-                        full_subject = self._expand_compound(subject)
-                        full_object = self._expand_compound(obj)
-                        
-                        relationships.append({
-                            "subject": full_subject,
-                            "predicate": token.text,
-                            "object": full_object,
-                            "sentence": sent.text
-                        })
+        Returns:
+            List of matching entities.
+        """
+        query = query.lower()
+        results = []
         
-        return relationships
-    
-    def _expand_compound(self, token):
-        """Expand a token to include its compound phrases"""
-        result = token.text
+        for entity_name, entity_data in self.entities.items():
+            if query in entity_name.lower():
+                results.append(entity_data)
         
-        # Check for compound dependencies
-        for child in token.children:
-            if child.dep_ == "compound":
-                result = child.text + " " + result
-        
-        # Also check for adjectival modifiers
-        for child in token.children:
-            if child.dep_ == "amod":
-                result = child.text + " " + result
-        
-        return result
-    
-    def add_document(self, document: Document) -> None:
-        """Process a document and add it to the knowledge graph"""
-        doc_id = document.metadata.get("source", "unknown")
-        text = document.page_content
-        
-        # Extract entities and relationships
-        entities = self.extract_entities(text)
-        relationships = self.extract_relationships(text)
-        
-        logger.info(f"Extracted {len(entities)} entities and {len(relationships)} relationships from document {doc_id}")
-        
-        # Add to Neo4j
-        with self.driver.session() as session:
-            # Create document node
-            session.run(
-                "MERGE (d:Document {doc_id: $doc_id}) SET d.text = $text",
-                doc_id=doc_id, text=text[:1000]  # Store preview of text
-            )
-            
-            # Create entity nodes and connect to document
-            for entity in entities:
-                session.run("""
-                MERGE (e:Entity {name: $name})
-                SET e.type = $type
-                MERGE (d:Document {doc_id: $doc_id})
-                MERGE (e)-[:MENTIONED_IN]->(d)
-                """,
-                name=entity["text"].lower(),
-                type=entity["label"],
-                doc_id=doc_id
-                )
-            
-            # Create relationships between entities
-            for rel in relationships:
-                session.run("""
-                MATCH (s:Entity {name: $subject})
-                MATCH (o:Entity {name: $object})
-                MERGE (s)-[:RELATES_TO {predicate: $predicate, sentence: $sentence, doc_id: $doc_id}]->(o)
-                """,
-                subject=rel["subject"].lower(),
-                object=rel["object"].lower(),
-                predicate=rel["predicate"],
-                sentence=rel["sentence"],
-                doc_id=doc_id
-                )
-    
-    def process_documents(self, documents: List[Document]) -> None:
-        """Process multiple documents and add them to the knowledge graph"""
-        for document in documents:
-            self.add_document(document)
-    
-    def query_related_entities(self, entity_name: str, max_hops: int = 2) -> List[Dict]:
-        """Query for entities related to the given entity"""
-        with self.driver.session() as session:
-            result = session.run(f"""
-            MATCH (e:Entity {{name: $name}})
-            MATCH (e)-[r:RELATES_TO*1..{max_hops}]-(related:Entity)
-            RETURN related.name AS name, related.type AS type, 
-                   count(*) AS strength
-            ORDER BY strength DESC
-            LIMIT 10
-            """, name=entity_name.lower())
-            
-            return [{"name": record["name"], "type": record["type"], "strength": record["strength"]} 
-                    for record in result]
-    
-    def query_entity_documents(self, entity_name: str) -> List[str]:
-        """Find documents mentioning the given entity"""
-        with self.driver.session() as session:
-            result = session.run("""
-            MATCH (e:Entity {name: $name})-[:MENTIONED_IN]->(d:Document)
-            RETURN d.doc_id AS doc_id
-            """, name=entity_name.lower())
-            
-            return [record["doc_id"] for record in result]
-    
-    def query_relationship_context(self, subject: str, object_entity: str) -> List[Dict]:
-        """Find relationship context between two entities"""
-        with self.driver.session() as session:
-            result = session.run("""
-            MATCH (s:Entity {name: $subject})-[r:RELATES_TO]->(o:Entity {name: $object})
-            RETURN r.predicate AS predicate, r.sentence AS context, r.doc_id AS source
-            UNION
-            MATCH (o:Entity {name: $object})-[r:RELATES_TO]->(s:Entity {name: $subject})
-            RETURN r.predicate AS predicate, r.sentence AS context, r.doc_id AS source
-            """, subject=subject.lower(), object=object_entity.lower())
-            
-            return [{"predicate": record["predicate"], 
-                     "context": record["context"],
-                     "source": record["source"]} 
-                   for record in result]
-    
-    def find_path_between_entities(self, start_entity: str, end_entity: str, max_hops: int = 3) -> List[Dict]:
-        """Find paths connecting two entities"""
-        with self.driver.session() as session:
-            result = session.run(f"""
-            MATCH path = shortestPath((s:Entity {{name: $start}})-[r:RELATES_TO*1..{max_hops}]-(e:Entity {{name: $end}}))
-            UNWIND relationships(path) AS rel
-            RETURN startNode(rel).name AS from_entity, 
-                   endNode(rel).name AS to_entity,
-                   rel.predicate AS relationship,
-                   rel.sentence AS context
-            """, start=start_entity.lower(), end=end_entity.lower())
-            
-            paths = []
-            for record in result:
-                paths.append({
-                    "from": record["from_entity"],
-                    "to": record["to_entity"],
-                    "relationship": record["relationship"],
-                    "context": record["context"]
-                })
-            
-            return paths
-    
-    def get_entity_graph(self, entity_names: List[str], max_hops: int = 2) -> Dict:
-        """Get a subgraph centered around specified entities"""
-        entities_str = "', '".join([e.lower() for e in entity_names])
-        
-        with self.driver.session() as session:
-            # Get nodes
-            nodes_result = session.run(f"""
-            MATCH (start:Entity)
-            WHERE start.name IN ['{entities_str}']
-            MATCH (related:Entity)-[*0..{max_hops}]-(start)
-            RETURN related.name AS name, related.type AS type, 
-                   CASE WHEN related.name IN ['{entities_str}'] THEN true ELSE false END AS is_source
-            """)
-            
-            nodes = [{"id": record["name"], 
-                      "type": record["type"], 
-                      "source": record["is_source"]} 
-                    for record in nodes_result]
-            
-            # Get edges
-            edges_result = session.run(f"""
-            MATCH (start:Entity)
-            WHERE start.name IN ['{entities_str}']
-            MATCH (source:Entity)-[r:RELATES_TO]->(target:Entity)
-            WHERE (source)-[*0..{max_hops}]-(start) AND (target)-[*0..{max_hops}]-(start)
-            RETURN source.name AS source, target.name AS target, 
-                   r.predicate AS relationship, r.doc_id AS doc_id
-            """)
-            
-            edges = [{"source": record["source"], 
-                      "target": record["target"],
-                      "relationship": record["relationship"],
-                      "doc_id": record["doc_id"]}
-                    for record in edges_result]
-            
-            return {"nodes": nodes, "edges": edges}
+        # Sort by count (popularity)
+        results.sort(key=lambda x: x["count"], reverse=True)
+        return results
 
-# Test function if script is run directly
-if __name__ == "__main__":
-    try:
-        # Create test knowledge graph
-        kg = KnowledgeGraph()
-        
-        # Test entity extraction
-        test_text = "Apple Inc. was founded by Steve Jobs and Steve Wozniak in Cupertino, California. They created the first Apple computer in 1976."
-        entities = kg.extract_entities(test_text)
-        print("Extracted entities:", entities)
-        
-        # Test relationship extraction
-        relationships = kg.extract_relationships(test_text)
-        print("Extracted relationships:", relationships)
-        
-        # Close connection
-        kg.close()
-        
-    except Exception as e:
-        logger.error(f"Test error: {str(e)}")
+# For backwards compatibility with existing code
+KnowledgeGraph = KnowledgeGraph

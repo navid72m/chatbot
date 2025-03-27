@@ -7,7 +7,7 @@ from langchain.docstore.document import Document
 
 from vector_store import VectorStore
 from knowledge_graph import KnowledgeGraph
-from llm_interface import query_ollama
+from llm_interface import stream_ollama_response
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -114,7 +114,7 @@ Format your response as a list, one query per line.
 
         try:
             # Get expansion from LLM
-            response = query_ollama(
+            response = stream_ollama_response(
                 query=expansion_prompt,
                 context="",
                 model=self.model,

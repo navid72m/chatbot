@@ -1,0 +1,61 @@
+{
+  "name": "local-chatbot-app",
+  "version": "1.0.0",
+  "description": "A chatbot application with ML backend",
+  "author": "Navid Mirnouti <navid72m@gmail.com>",
+  "main": "electron/main.js",
+  "build": {
+    "asar": true,
+    "asarUnpack": [
+      "bin/**",
+      "ollama_models/**",
+      "models/**"
+    ],
+    "appId": "com.yourcompany.chatbot",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "!**/node_modules/**/*",
+      "!**/.venv",
+      "!**/venv",
+      "!**/*.pyc",
+      "!**/*.pyo",
+      "!**/__pycache__/**",
+      "!**/miniconda3/**",
+      "!**/chatbot-env/**",
+      "!backend/**",
+      "!**/config",
+      "!**/site-packages/**"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg",
+      "extraFiles": [
+        {
+          "from": "electron/bin/backend",
+          "to": "bin/backend"
+        }
+      ]
+    },
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false
+  },
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "electron:dev": "electron .",
+    "electron:build": "npm run build:frontend && electron-builder build --publish never",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^35.1.1",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "axios": "^1.8.4"
+  }
+}

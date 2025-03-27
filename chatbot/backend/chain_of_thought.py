@@ -5,7 +5,7 @@ import re
 import json
 from langchain.docstore.document import Document
 
-from llm_interface import query_ollama
+from llm_interface import stream_ollama_response
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -61,7 +61,7 @@ ANSWER: [Provide the final answer based on context only]
 """
         
         # Get the response using the enhanced CoT prompt
-        response = query_ollama(
+        response = stream_ollama_response(
             query=cot_prompt, 
             context="",  # Context is already in our CoT prompt
             model=self.model, 
@@ -156,7 +156,7 @@ EXPLANATION: [Explain your assessment]
 """
 
         # Get verification response
-        verification = query_ollama(
+        verification = stream_ollama_response(
             query=verification_prompt,
             context="",  # Context is in the prompt
             model=self.model,
@@ -235,7 +235,7 @@ Format your response as a JSON array of strings, each containing one sub-questio
 """
 
         # Get decomposition response
-        decomposition_response = query_ollama(
+        decomposition_response = stream_ollama_response(
             query=decomposition_prompt,
             context="",  # Context is in the prompt
             model=self.model,
@@ -251,7 +251,7 @@ Format your response as a JSON array of strings, each containing one sub-questio
             logger.info(f"Answering sub-question {i+1}/{len(sub_questions)}: {sq}")
             
             # Answer with basic reasoning
-            answer = query_ollama(
+            answer = stream_ollama_response(
                 query=sq,
                 context=context,
                 model=self.model,
@@ -278,7 +278,7 @@ Based on these intermediate answers, please provide a comprehensive answer to th
 Your answer should synthesize the information from the sub-questions and present a coherent response.
 """
 
-        final_answer = query_ollama(
+        final_answer = stream_ollama_response(
             query=final_prompt,
             context=context,
             model=self.model,

@@ -9,7 +9,7 @@ from langchain.docstore.document import Document
 from knowledge_graph import KnowledgeGraph
 from chain_of_thought import ChainOfThoughtReasoner
 from vector_store import VectorStore
-from llm_interface import query_ollama
+from llm_interface import stream_ollama_response
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -247,7 +247,7 @@ class AdvancedRAG:
         else:
             # Use standard query
             logger.info("Using standard query processing")
-            answer = query_ollama(
+            answer = stream_ollama_response(
                 query=query,
                 context=context,
                 model=self.model,
@@ -299,10 +299,22 @@ class AdvancedRAG:
         # Simple concatenation with document metadata
         try:
             context_parts = []
+            total_tokens = 0
+            max_tokens = 4096  # Maximum context size
             
             for i, doc in enumerate(documents):
                 source = doc.metadata.get("source", "Unknown")
                 text = doc.page_content.strip()
+                
+                # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
+                doc_tokens = len(text) // 4
+                
+                # If adding this document would exceed the limit, truncate it
+                if total_tokens + doc_tokens > max_tokens:
+                    remaining_tokens = max_tokens - total_tokens
+                    # Truncate text to fit remaining tokens
+                    text = text[:remaining_tokens * 4] + "..."
+                    logger.warning(f"Truncated document {source} to fit within token limit")
                 
                 # Add a header for each document chunk
                 if "knowledge_graph_path" in source:
@@ -311,6 +323,12 @@ class AdvancedRAG:
                 else:
                     # Regular document
                     context_parts.append(f"[Document: {source}, Chunk: {i+1}]\n{text}")
+                
+                total_tokens += doc_tokens
+                
+                # If we've reached the token limit, stop adding documents
+                if total_tokens >= max_tokens:
+                    break
             
             return "\n\n".join(context_parts)
         except Exception as e:

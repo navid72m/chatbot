@@ -1,70 +1,33 @@
 {
-    "name": "admin-dashboard-desktop",
-    "version": "1.0.0",
-    "description": "Admin Dashboard Desktop Application",
-    "main": "electron/main.js",
-    "private": true,
-    "dependencies": {
-        "axios": "^1.8.4",
-        "dayjs": "^1.11.13",
-        "electron-is-dev": "^2.0.0",
-        "electron-log": "^5.3.2",
-        "electron-updater": "^6.3.9",
-        "lodash": "^4.17.21",
-        "prop-types": "^15.8.1",
-        "react": "^18.3.1",
-        "react-dom": "^18.3.1",
-        "react-icons": "^5.5.0",
-        "react-router-dom": "^7.4.0",
-        "recharts": "^2.15.1",
-        "yup": "^1.6.1"
-    },
-    "devDependencies": {
-        "@vitejs/plugin-react": "^4.3.4",
-        "concurrently": "^8.2.2",
-        "electron": "^29.4.6",
-        "electron-builder": "^24.13.3",
-        "vite": "^5.4.15",
-        "wait-on": "^7.2.0"
-    },
-    "scripts": {
-        "dev": "vite",
-        "build": "vite build",
-        "preview": "vite preview",
-        "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
-        "electron:build": "npm run build && electron-builder build --publish never",
-        "electron:publish": "npm run build && electron-builder build --publish always"
-    },
-    "build": {
-        "appId": "com.yourcompany.adminapp",
-        "productName": "Admin Dashboard",
-        "files": [
-            "dist/**/*",
-            "electron/**/*"
-        ],
-        "directories": {
-            "buildResources": "assets",
-            "output": "release"
-        },
-        "mac": {
-            "category": "public.app-category.business",
-            "target": [
-                "dmg",
-                "zip"
-            ]
-        },
-        "win": {
-            "target": [
-                "nsis",
-                "portable"
-            ]
-        },
-        "linux": {
-            "target": [
-                "AppImage",
-                "deb"
-            ],
-            "category": "Office"
-        }
-    }
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.16.0",
+    "axios": "^1.5.0",
+    "uuid": "^9.0.0",
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "@mui/material": "^5.13.0",
+    "@mui/icons-material": "^5.11.16",
+    "react-markdown": "^8.0.7",
+    "react-syntax-highlighter": "^15.5.0",
+    "remark-gfm": "^3.0.1",
+    "date-fns": "^2.30.0",
+    "lodash": "^4.17.21"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.15",
+    "@types/react-dom": "^18.2.7",
+    "@vitejs/plugin-react": "^4.0.3",
+    "vite": "^4.4.5"
+  }
 }
