@@ -138,14 +138,20 @@ def stream_ollama_response(
     temperature: float = 0.7
 ):
     full_prompt = f"""
-Context information is below.
----------------------
-{context}
----------------------
+You are a helpful assistant answering based solely on the context provided.
 
-Given the context information and not prior knowledge, answer the question.
+Context:
+---------
+{context}
+---------
+
+Instructions:
+- Use only the context above to answer.
+- Do not rely on prior knowledge.
+- If the answer is not in the context, reply with: "I don't know based on the provided document."
 
 Question: {query}
+Answer:
 """.strip()
 
     payload = {

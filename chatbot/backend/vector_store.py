@@ -1,103 +1,127 @@
-# vector_store.py - Vector storage with ChromaDB
-
-# from asyncio.log import logger
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-
-from langchain.docstore.document import Document
-from typing import List, Dict, Optional
+"""
+A simplified vector store that uses basic numpy operations instead of ML libraries.
+This is meant to be a temporary solution for packaging purposes.
+"""
 import os
+import json
+import numpy as np
+from typing import List, Dict, Any, Optional
 
-import logging
-logger = logging.getLogger(__name__)
+class Document:
+    """Simple document class similar to LangChain's Document."""
+    def __init__(self, page_content: str, metadata: Optional[Dict[str, Any]] = None):
+        self.page_content = page_content
+        self.metadata = metadata or {}
 
-class VectorStore:
-    def __init__(self, persist_directory="./chroma_db"):
-        """Initialize the vector store with HuggingFace embeddings"""
+class SimpleVectorStore:
+    """A simplified vector store that doesn't rely on external ML libraries."""
+    
+    def __init__(self, persist_directory: str = "simple_db"):
+        """Initialize the simple vector store.
+        
+        Args:
+            persist_directory: Directory to persist the database.
+        """
         self.persist_directory = persist_directory
         os.makedirs(persist_directory, exist_ok=True)
         
-        # Initialize embeddings using sentence-transformers
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'}
-        )
+        self.documents_file = os.path.join(persist_directory, "documents.json")
+        self.documents = []
         
-        # Initialize ChromaDB
-        self.db = Chroma(
-            persist_directory=persist_directory,
-            embedding_function=self.embeddings
-        )
+        # Load existing documents if they exist
+        if os.path.exists(self.documents_file):
+            try:
+                with open(self.documents_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.documents = [
+                        Document(item["page_content"], item["metadata"])
+                        for item in data
+                    ]
+            except Exception as e:
+                print(f"Error loading documents: {e}")
     
-    def add_document(self, document_name: str, chunks: List[Document]) -> None:
-        """Add a document's chunks to the vector store"""
-        # Add metadata to chunks
-        for i, chunk in enumerate(chunks):
-            if not hasattr(chunk, 'metadata'):
-                chunk.metadata = {}
-            chunk.metadata["source"] = document_name
-            chunk.metadata["chunk_id"] = i
-        
-        # Add to ChromaDB
-        self.db.add_documents(chunks)
-        self.db.persist()
-    
-    def search(self, query: str, k: int = 5, filter: Optional[Dict] = None) -> List[Document]:
-        """
-        Search for similar chunks to the query
+    def add_documents(self, documents: List[Document]) -> None:
+        """Add documents to the vector store.
         
         Args:
-            query: The search query
-            k: Number of results to return
-            filter: Optional filter dictionary (e.g., {"source": "document_name"})
+            documents: List of Document objects to add.
+        """
+        self.documents.extend(documents)
+        self._save_documents()
+    
+    def _save_documents(self) -> None:
+        """Save documents to disk."""
+        data = [
+            {"page_content": doc.page_content, "metadata": doc.metadata}
+            for doc in self.documents
+        ]
+        with open(self.documents_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    
+    def similarity_search(self, query: str, k: int = 5) -> List[Document]:
+        """Search for documents similar to the query.
+        Simple implementation using string matching.
+        
+        Args:
+            query: Query string.
+            k: Number of documents to return.
             
         Returns:
-            List of similar Document objects
+            List of Document objects.
         """
-        try:
-            logger.info(f"Starting vector search with query: '{query}', k={k}, filter={filter}")
+        # Simple string matching for now
+        scored_docs = []
+        
+        for doc in self.documents:
+            # Calculate a simple score based on word overlap
+            query_words = set(query.lower().split())
+            doc_words = set(doc.page_content.lower().split())
+            common_words = query_words.intersection(doc_words)
             
-            if filter and "source" in filter:
-                # Use where filter in ChromaDB for more efficient filtering
-                where_filter = {"source": filter["source"]}
-                logger.info(f"Applying filter: {where_filter}")
-                
-                results = self.db.similarity_search_with_score(
-                    query, 
-                    k=k,
-                    filter=where_filter
-                )
-                
-                # Log detailed information about each result
-                logger.info(f"Found {len(results)} results with scores:")
-                for doc, score in results:
-                    logger.info(f"Score: {score:.4f}")
-                    logger.info(f"Source: {doc.metadata.get('source', 'Unknown')}")
-                    logger.info(f"Chunk ID: {doc.metadata.get('chunk_id', 'Unknown')}")
-                    logger.info(f"Content preview: {doc.page_content[:100]}...")
-                    logger.info("-" * 50)
-                
-                filtered_docs = [doc for doc, _ in results]
-                logger.info(f"Returning {len(filtered_docs)} filtered documents")
-                return filtered_docs
-            else:
-                # If no filter, use regular similarity search
-                logger.info("No filter provided, performing regular similarity search")
-                results = self.db.similarity_search(query, k=k)
-                
-                # Log information about unfiltered results
-                logger.info(f"Found {len(results)} results:")
-                for doc in results:
-                    logger.info(f"Source: {doc.metadata.get('source', 'Unknown')}")
-                    logger.info(f"Chunk ID: {doc.metadata.get('chunk_id', 'Unknown')}")
-                    logger.info(f"Content preview: {doc.page_content[:100]}...")
-                    logger.info("-" * 50)
-                
-                logger.info(f"Returning {len(results)} documents")
-                return results
-                
-        except Exception as e:
-            logger.error(f"Error in vector search: {str(e)}", exc_info=True)
-            logger.error(f"Query parameters - query: '{query}', k: {k}, filter: {filter}")
-            return []
+            if common_words:
+                score = len(common_words) / max(len(query_words), len(doc_words))
+                scored_docs.append((doc, score))
+        
+        # Sort by score in descending order
+        scored_docs.sort(key=lambda x: x[1], reverse=True)
+        
+        # Return top-k documents
+        return [doc for doc, _ in scored_docs[:k]]
+    
+    def similarity_search_with_score(self, query: str, k: int = 5) -> List[tuple]:
+        """Search for documents similar to the query and return scores.
+        
+        Args:
+            query: Query string.
+            k: Number of documents to return.
+            
+        Returns:
+            List of tuples of (Document, score).
+        """
+        # Simple string matching for now
+        scored_docs = []
+        
+        for doc in self.documents:
+            # Calculate a simple score based on word overlap
+            query_words = set(query.lower().split())
+            doc_words = set(doc.page_content.lower().split())
+            common_words = query_words.intersection(doc_words)
+            
+            if common_words:
+                score = len(common_words) / max(len(query_words), len(doc_words))
+                scored_docs.append((doc, score))
+        
+        # Sort by score in descending order
+        scored_docs.sort(key=lambda x: x[1], reverse=True)
+        
+        # Return top-k documents with scores
+        return scored_docs[:k]
+    
+    def delete_collection(self) -> None:
+        """Delete the collection."""
+        self.documents = []
+        if os.path.exists(self.documents_file):
+            os.remove(self.documents_file)
 
+# For backwards compatibility with existing code
+VectorStore = SimpleVectorStore

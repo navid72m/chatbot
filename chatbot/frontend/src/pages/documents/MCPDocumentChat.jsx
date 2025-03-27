@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import { getBackendURL } from '@/api/baseURL'; // adjust based on actual path
+
 
 // Performance optimizations:
 // 1. Using useCallback for stable function references
@@ -52,7 +54,10 @@ const MCPDocumentChat = () => {
   // Check server connection
   const checkServerConnection = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/');
+      console.log('Checking server connection...');
+      console.log('Backend URL:', getBackendURL());
+      const response = await axios.get(`${getBackendURL()}/`);
+      console.log('Server response:', response.data);
       setServerInfo(response.data);
       setConnected(true);
       fetchAvailableModels();
@@ -65,7 +70,7 @@ const MCPDocumentChat = () => {
   // Fetch available models
   const fetchAvailableModels = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/models');
+      const response = await axios.get(`${getBackendURL()}/models`);
       if (response.data && response.data.models) {
         setAvailableModels(response.data.models);
       }
@@ -115,7 +120,7 @@ const MCPDocumentChat = () => {
     
     try {
       // Upload file to server using REST API
-      const response = await axios.post('http://localhost:8000/upload', formData, {
+      const response = await axios.post(`${getBackendURL()}/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -176,7 +181,7 @@ const MCPDocumentChat = () => {
   // Update configuration on server
   const updateConfiguration = async (config) => {
     try {
-      await axios.post('http://localhost:8000/configure', { config });
+      await axios.post(`${getBackendURL()}/configure`, { config });
     } catch (error) {
       console.error('Error updating configuration:', error);
     }
@@ -229,7 +234,7 @@ const MCPDocumentChat = () => {
     
     try {
       // Send query to server
-      const response = await axios.post('http://localhost:8000/query', {
+      const response = await axios.post(`${getBackendURL()}/query`, {
         query: userMessage.content,
         document: uploadResult.filename,
         ...advancedOptions
