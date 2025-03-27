@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import fs from 'fs';
-import http from 'http'; // use built-in http module
+import http from 'http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,25 +12,28 @@ const __dirname = path.dirname(__filename);
 let backendProcess;
 let ollamaProcess;
 
-function waitForServerReady(url, timeout = 10000) {
+function waitForServerReady(url, timeout = 30000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
 
     const check = () => {
-      const req = http.get(url, (res) => {
+      const req = http.get(url, res => {
         if (res.statusCode === 200) {
-          resolve(true);
-        } else {
-          retry();
+          console.log(`✅ Server ready at ${url}`);
+          return resolve(true);
         }
+        retry();
       });
 
       req.on('error', retry);
-      req.setTimeout(1000, retry);
+      req.setTimeout(1000, () => {
+        req.destroy();
+        retry();
+      });
 
       function retry() {
         if (Date.now() - start > timeout) {
-          reject(new Error('Server did not become ready in time'));
+          reject(new Error(`Timeout waiting for ${url}`));
         } else {
           setTimeout(check, 500);
         }
@@ -49,7 +52,7 @@ function createWindow() {
       nodeIntegration: true,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
-    }
+    },
   });
 
   const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
@@ -58,18 +61,24 @@ function createWindow() {
 }
 
 function startBackend() {
-  const backendPath = path.join(process.resourcesPath, 'bin', 'backend');
-  const pythonPath = path.join(process.resourcesPath, 'backend', 'venv', 'bin', 'python');
+  const backendScript = path.join(__dirname, 'bin', 'wrapper.py');
+  const pythonExecutable = '/Users/seyednavidmirnourilangeroudi/miniconda3/bin/python'; // Make dynamic if needed
 
+  if (!fs.existsSync(backendScript)) {
+    console.error(`❌ Backend script not found at: ${backendScript}`);
+    return false;
+  }
 
-  console.log(`Starting backend from: ${backendPath}`);
-  backendProcess = spawn(pythonPath, [backendPath], {
-    cwd: path.dirname(backendPath),
+  console.log(`🚀 Starting backend with: ${pythonExecutable} ${backendScript}`);
+  backendProcess = spawn(pythonExecutable, [backendScript], {
+    cwd: path.dirname(backendScript),
     stdio: 'pipe',
   });
 
-  backendProcess.stdout.on('data', data => console.log(`Backend: ${data}`));
-  backendProcess.stderr.on('data', data => console.error(`Backend Error: ${data}`));
+  backendProcess.stdout.on('data', (data) => console.log(`🟢 Backend: ${data}`));
+  backendProcess.stderr.on('data', (data) => console.error(`🔴 Backend Error: ${data}`));
+
+  return true;
 }
 
 function startOllama() {
@@ -77,34 +86,55 @@ function startOllama() {
     ? path.join(process.resourcesPath, 'bin', 'ollama')
     : path.join(__dirname, 'bin', 'ollama');
 
-  if (fs.existsSync(ollamaPath)) {
-    console.log(`Starting Ollama from: ${ollamaPath}`);
-    ollamaProcess = spawn(ollamaPath, ['serve'], {
-      cwd: path.dirname(ollamaPath),
-      stdio: 'pipe',
-    });
-
-    ollamaProcess.stdout.on('data', data => console.log(`Ollama: ${data}`));
-    ollamaProcess.stderr.on('data', data => console.error(`Ollama Error: ${data}`));
-  } else {
-    console.error(`Ollama binary not found at: ${ollamaPath}`);
+  if (!fs.existsSync(ollamaPath)) {
+    console.error(`❌ Ollama binary not found at: ${ollamaPath}`);
+    return false;
   }
+
+  console.log(`🚀 Starting Ollama from: ${ollamaPath}`);
+  ollamaProcess = spawn(ollamaPath, ['serve'], {
+    cwd: path.dirname(ollamaPath),
+    stdio: 'pipe',
+  });
+
+  ollamaProcess.stdout.on('data', data =>
+    console.log(`🟢 Ollama: ${data.toString()}`),
+  );
+  ollamaProcess.stderr.on('data', data =>
+    console.error(`🔴 Ollama Error: ${data.toString()}`),
+  );
+
+  return true;
 }
 
-// Handle Electron lifecycle
 app.whenReady().then(async () => {
-  startBackend();
-  startOllama();
+  const ollamaStarted = startOllama();
+  if (!ollamaStarted) return;
 
   try {
-    console.log('⏳ Waiting for FastAPI server to be ready...');
+    console.log('⏳ Waiting for Ollama to be ready...');
+    await waitForServerReady('http://localhost:11434');
+    console.log('✅ Ollama is ready');
+
+    const backendStarted = startBackend();
+    if (!backendStarted) {
+      const errorWin = new BrowserWindow({ width: 600, height: 400 });
+      errorWin.loadURL(
+        'data:text/html,<h1>Backend binary missing</h1><p>Please check packaging paths.</p>',
+      );
+      return;
+    }
+
+    console.log('⏳ Waiting for FastAPI backend...');
     await waitForServerReady('http://localhost:8000/health');
-    console.log('✅ FastAPI is ready. Launching UI...');
+    console.log('✅ Backend is ready');
     createWindow();
   } catch (err) {
-    console.error('❌ FastAPI failed to start in time:', err);
+    console.error('❌ Startup error:', err.message);
     const failWin = new BrowserWindow({ width: 600, height: 400 });
-    failWin.loadURL('data:text/html,<h1>Backend failed to start</h1><p>Try again or check logs.</p>');
+    failWin.loadURL(
+      `data:text/html,<h1>Startup failed</h1><p>${err.message}</p>`,
+    );
   }
 });
 

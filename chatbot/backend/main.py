@@ -182,7 +182,25 @@ async def handle_query(request: QueryRequest):
             }
         
         # Build context from chunks
-        context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
+        print(relevant_chunks)
+        print(type(relevant_chunks[0]))
+        def extract_page_content(chunk):
+            # Unpack if it's a (Document, score) tuple
+            if isinstance(chunk, tuple):
+                chunk = chunk[0]
+            # Extract from dict
+            if isinstance(chunk, dict):
+                return chunk.get("page_content", "")
+            # Extract from Document object
+            return getattr(chunk, "page_content", "")
+
+        context = "\n\n".join([
+            content for chunk in relevant_chunks
+            if (content := extract_page_content(chunk))
+        ])
+
+
+        # context = "\n\n".join([chunk.page_content for chunk , _ in relevant_chunks])
         
         # Get response from LLM
         response = stream_ollama_response(
@@ -256,5 +274,13 @@ async def list_models():
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
+    import sys
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)
+    
+    # Use the app object directly, not a string reference
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle
+        uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    else:
+        # Development mode
+        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

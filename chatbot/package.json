@@ -1,63 +1,51 @@
 {
-  "name": "your-app-name",
+  "name": "local-chatbot-app",
   "version": "1.0.0",
-  "description": "Your application description",
+  "description": "A chatbot application with ML backend",
+  "author": "Navid Mirnouti <navid72m@gmail.com>",
   "main": "electron/main.js",
-  "type": "module",
- "scripts": {
-  "build:frontend": "cd frontend && npx vite build",
-  "build": "npm run build:frontend",
-  "electron:build": "npm run build && electron-builder build --publish never"
-}
-,
-  "dependencies": {
-    "electron-log": "^5.0.0"
+  "build": {
+  "appId": "com.yourcompany.chatbot",
+  "files": [
+    "**/*",
+    "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+    "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+    "!**/node_modules/*.d.ts",
+    "!**/node_modules/.bin",
+    "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+    "!.editorconfig",
+    "!**/._*",
+    "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+    "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+    "!**/{appveyor.yml,.travis.yml,circle.yml}",
+    "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+  ],
+  "directories": {
+    "buildResources": "build"
+  },
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": "dmg",
+    "extraFiles": [
+      {
+        "from": "launch_app.sh",
+        "to": "launch_app.sh"
+      }
+    ]
+  },
+  "npmRebuild": false,
+  "buildDependenciesFromSource": false
+},
+   "scripts": {
+  "dev": "cd frontend && npm run dev",
+  "build:frontend": "cd frontend && npm run build",
+  "electron:dev": "electron .",
+  "electron:build": "npm run build:frontend && electron-builder build --publish never",
+  "pack": "electron-builder --dir",
+  "dist": "electron-builder"
   },
   "devDependencies": {
-    "concurrently": "^8.2.0",
-    "electron": "^28.0.0",
-    "electron-builder": "^24.6.3"
-  },
-  "build": {
-    "appId": "com.yourcompany.yourapp",
-    "productName": "Your App Name",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*"
-    ],
-    "extraResources": [
-      { "from": "electron/bin/backend", "to": "bin/backend" },
-      { "from": "electron/bin/ollama", "to": "bin/ollama" }
-    ],
-    "extraMetadata": {
-      "main": "electron/main.js"
-    },
-    "asar": true,
-    "asarUnpack": [
-      "backend/**/*",
-      "bin/**/*"
-    ],
-    "mac": {
-      "category": "public.app-category.productivity",
-      "target": ["dmg"],
-      "icon": "frontend/public/icon.icns"
-    },
-    "dmg": {
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ]
-    }
+    "electron": "^35.1.1",
+    "electron-builder": "^26.0.12"
   }
 }
