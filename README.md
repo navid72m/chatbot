@@ -2,7 +2,7 @@
 
 A sophisticated document chatbot system implementing advanced Retrieval-Augmented Generation (RAG) techniques to enable more accurate, context-aware conversations with your documents.
 
-![Advanced RAG Chatbot](/screenshots/demo.png)
+
 
 ## 🌟 Features
 
@@ -111,27 +111,7 @@ The system consists of several key components:
 - Configurable parameters (temperature, context window)
 - Quantization options for better performance
 
-## 🖼️ Screenshots
 
-![Document Upload](/screenshots/upload.png)
-*Document Upload Interface*
-
-![Advanced Chat Options](/screenshots/chat-options.png)
-*Advanced RAG Configuration Options*
-
-![Conversational Interface](/screenshots/conversation.png)
-*Conversational Interface with Source Attribution*
-
-## 📊 Performance Evaluation
-
-The system shows significant improvements over standard RAG approaches:
-
-| Metric | Standard RAG | Advanced RAG | Improvement |
-|--------|-------------|-------------|-------------|
-| Answer Accuracy | 78% | 91% | +13% |
-| Hallucination Rate | 15% | 4% | -11% |
-| Multi-hop Query Success | 45% | 83% | +38% |
-| Document Retrieval Precision | 72% | 89% | +17% |
 
 ## 🔧 Configuration Options
 
