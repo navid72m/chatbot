@@ -5,47 +5,57 @@
   "author": "Navid Mirnouti <navid72m@gmail.com>",
   "main": "electron/main.js",
   "build": {
-  "appId": "com.yourcompany.chatbot",
-  "files": [
-    "**/*",
-    "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
-    "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
-    "!**/node_modules/*.d.ts",
-    "!**/node_modules/.bin",
-    "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
-    "!.editorconfig",
-    "!**/._*",
-    "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
-    "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
-    "!**/{appveyor.yml,.travis.yml,circle.yml}",
-    "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
-  ],
-  "directories": {
-    "buildResources": "build"
+    "asar": true,
+    "asarUnpack": [
+      "bin/**",
+      "ollama_models/**",
+      "models/**"
+    ],
+    "appId": "com.yourcompany.chatbot",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "!**/node_modules/**/*",
+      "!**/.venv",
+      "!**/venv",
+      "!**/*.pyc",
+      "!**/*.pyo",
+      "!**/__pycache__/**",
+      "!**/miniconda3/**",
+      "!**/chatbot-env/**",
+      "!backend/**",
+      "!**/config",
+      "!**/site-packages/**"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg",
+      "extraFiles": [
+        {
+          "from": "electron/bin/backend",
+          "to": "bin/backend"
+        }
+      ]
+    },
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false
   },
-  "mac": {
-    "category": "public.app-category.productivity",
-    "target": "dmg",
-    "extraFiles": [
-      {
-        "from": "launch_app.sh",
-        "to": "launch_app.sh"
-      }
-    ]
-  },
-  "npmRebuild": false,
-  "buildDependenciesFromSource": false
-},
-   "scripts": {
-  "dev": "cd frontend && npm run dev",
-  "build:frontend": "cd frontend && npm run build",
-  "electron:dev": "electron .",
-  "electron:build": "npm run build:frontend && electron-builder build --publish never",
-  "pack": "electron-builder --dir",
-  "dist": "electron-builder"
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "electron:dev": "electron .",
+    "electron:build": "npm run build:frontend && electron-builder build --publish never",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
   },
   "devDependencies": {
     "electron": "^35.1.1",
     "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "axios": "^1.8.4"
   }
 }

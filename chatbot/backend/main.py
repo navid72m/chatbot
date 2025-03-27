@@ -2,8 +2,9 @@ import sys
 import os
 sys.path.append(os.path.dirname(__file__))
 # mcp_server.py - Message Communication Protocol Server implementation
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from typing import List, Dict, Optional, Any
 import logging
 import os
@@ -17,13 +18,45 @@ from datetime import datetime
 # Import existing modules
 from document_processor import process_document, chunk_document
 from vector_store import VectorStore
-from llm_interface import  list_ollama_models, stream_ollama_response
+from llm_interface import list_ollama_models, stream_ollama_response, _get_ollama_response_sync
 
 # Import advanced RAG modules
 from knowledge_graph import KnowledgeGraph
 from chain_of_thought import ChainOfThoughtReasoner
 from advanced_rag import AdvancedRAG
 from hybrid_retriever import HybridRetriever
+
+# Import model download endpoints - make sure model_download.py is in the same directory
+try:
+    from model_download import add_model_download_routes
+except ImportError:
+    # Fall back to defining a basic implementation if the module doesn't exist
+    def add_model_download_routes(app):
+        logging.error("model_download module not found. Model download features will be disabled.")
+        
+        # Create a router for basic model operations
+        from fastapi import APIRouter
+        router = APIRouter()
+        
+        @router.get("/models")
+        async def list_models():
+            """List available Ollama models without download functionality"""
+            try:
+                models = list_ollama_models()
+                return {
+                    "models": models,
+                    "downloaded_models": models,  # Assume all listed models are downloaded
+                    "model_info": {}  # No detailed info available
+                }
+            except Exception as e:
+                logging.error(f"Error listing models: {str(e)}")
+                return {
+                    "models": ["deepseek-r1"],
+                    "downloaded_models": ["deepseek-r1"],
+                    "model_info": {}
+                }
+        
+        app.include_router(router, tags=["models"])
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -103,7 +136,8 @@ class ConfigRequest(BaseModel):
 class SetDocumentRequest(BaseModel):
     document: str
 
-
+# Add model download routes to our app
+add_model_download_routes(app)
 
 @app.get("/")
 async def root():
@@ -117,9 +151,11 @@ async def root():
             {"id": "kg", "name": "Knowledge Graph", "enabled": advanced_rag.use_kg},
             {"id": "verification", "name": "Answer Verification", "enabled": advanced_rag.verify_answers},
             {"id": "multihop", "name": "Multi-hop Reasoning", "enabled": advanced_rag.use_multihop},
-            {"id": "hybrid", "name": "Hybrid Retrieval", "enabled": True}
+            {"id": "hybrid", "name": "Hybrid Retrieval", "enabled": True},
+            {"id": "streaming", "name": "Streaming Responses", "enabled": True},
+            {"id": "model_management", "name": "Model Management", "enabled": True}
         ],
-        "server_version": "1.0.0",
+        "server_version": "1.1.0",
         "message": "MCP Document Chat Server"
     }
 
@@ -161,9 +197,146 @@ async def upload_document(file: UploadFile = File(...)):
         logger.error(f"Error processing document: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+async def generate_stream_response(query, context, model, temperature):
+    """Generate streaming response chunks from LLM"""
+    # Initialize response data
+    message_id = str(uuid.uuid4())
+    timestamp = datetime.now().isoformat()
+    
+    # Send initial stream response header
+    header = {
+        "type": "stream_start",
+        "message_id": message_id,
+        "timestamp": timestamp
+    }
+    yield f"data: {json.dumps(header)}\n\n"
+    
+    # Stream the response content
+    accumulated_text = ""
+    async for token in stream_ollama_response(
+        query=query,
+        context=context,
+        model=model,
+        temperature=temperature,
+        stream=True  # Enable streaming in ollama interface
+    ):
+        accumulated_text += token
+        chunk = {
+            "type": "stream_token",
+            "message_id": message_id,
+            "token": token,
+            "accumulated_text": accumulated_text,
+            "timestamp": datetime.now().isoformat()
+        }
+        yield f"data: {json.dumps(chunk)}\n\n"
+        await asyncio.sleep(0.01)  # Small delay to control streaming pace
+    
+    # Send final completion message
+    footer = {
+        "type": "stream_end",
+        "message_id": message_id,
+        "timestamp": datetime.now().isoformat(),
+        "complete_text": accumulated_text
+    }
+    yield f"data: {json.dumps(footer)}\n\n"
+
+@app.get("/query")
+async def handle_query_streaming(
+    query: str, 
+    document: str, 
+    use_advanced_rag: bool = True,
+    use_cot: bool = True,
+    use_kg: bool = True,
+    verify_answers: bool = True,
+    use_multihop: bool = True,
+    model: str = "mistral",
+    temperature: float = 0.7,
+    context_window: int = 10,
+    quantization: str = "4bit"
+):
+    """Handle a streaming query request"""
+    try:
+        logger.info(f"Streaming query request: {query}")
+        # Get relevant chunks from vector store
+        relevant_chunks = vector_store.search(
+            query=query,
+            k=int(context_window),
+            filter={"source": document}
+        )
+        
+        if not relevant_chunks:
+            # For empty results, return a simple error message
+            async def error_generator():
+                error_msg = {
+                    "type": "stream_start",
+                    "message_id": str(uuid.uuid4()),
+                    "timestamp": datetime.now().isoformat()
+                }
+                yield f"data: {json.dumps(error_msg)}\n\n"
+                
+                error_content = "No relevant information found in the document."
+                yield f"data: {json.dumps({'type': 'stream_token', 'token': error_content})}\n\n"
+                
+                yield f"data: {json.dumps({'type': 'stream_end', 'complete_text': error_content})}\n\n"
+                
+            return StreamingResponse(
+                error_generator(),
+                media_type="text/event-stream"
+            )
+        
+        # Build context from chunks
+        def extract_page_content(chunk):
+            # Unpack if it's a (Document, score) tuple
+            if isinstance(chunk, tuple):
+                chunk = chunk[0]
+            # Extract from dict
+            if isinstance(chunk, dict):
+                return chunk.get("page_content", "")
+            # Extract from Document object
+            return getattr(chunk, "page_content", "")
+
+        context = "\n\n".join([
+            content for chunk in relevant_chunks
+            if (content := extract_page_content(chunk))
+        ])
+        
+        logger.info(f"Starting streaming response for query: {query[:50]}...")
+        
+        # Return streaming response
+        return StreamingResponse(
+            generate_stream_response(
+                query=query,
+                context=context,
+                model=model,
+                temperature=float(temperature)
+            ),
+            media_type="text/event-stream"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing streaming query: {str(e)}")
+        # Stream an error response in SSE format
+        async def error_stream():
+            error_msg = {
+                "type": "stream_start",
+                "message_id": str(uuid.uuid4()),
+                "timestamp": datetime.now().isoformat()
+            }
+            yield f"data: {json.dumps(error_msg)}\n\n"
+            
+            error_content = f"Sorry, I encountered an error: {str(e)}"
+            yield f"data: {json.dumps({'type': 'stream_token', 'token': error_content})}\n\n"
+            
+            yield f"data: {json.dumps({'type': 'stream_end', 'complete_text': error_content})}\n\n"
+            
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream"
+        )
+
 @app.post("/query")
-async def handle_query(request: QueryRequest):
-    """Handle a query request"""
+async def handle_query_post(request: QueryRequest):
+    """Handle a query request via POST (for compatibility)"""
     try:
         # Get relevant chunks from vector store
         relevant_chunks = vector_store.search(
@@ -182,8 +355,6 @@ async def handle_query(request: QueryRequest):
             }
         
         # Build context from chunks
-        print(relevant_chunks)
-        print(type(relevant_chunks[0]))
         def extract_page_content(chunk):
             # Unpack if it's a (Document, score) tuple
             if isinstance(chunk, tuple):
@@ -198,17 +369,76 @@ async def handle_query(request: QueryRequest):
             content for chunk in relevant_chunks
             if (content := extract_page_content(chunk))
         ])
+        
+        # Return streaming response
+        return StreamingResponse(
+            generate_stream_response(
+                query=request.query,
+                context=context,
+                model=request.model,
+                temperature=request.temperature
+            ),
+            media_type="text/event-stream"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing query: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/query-sync")
+async def handle_query_sync(request: QueryRequest):
+    """Handle a query request with non-streaming response (fallback)"""
+    try:
+        logger.info(f"Non-streaming query request: {request.query}")
+        # Get relevant chunks from vector store
+        relevant_chunks = vector_store.search(
+            query=request.query,
+            k=request.context_window,
+            filter={"source": request.document}
+        )
+        
+        if not relevant_chunks:
+            return {
+                "type": "error",
+                "message_id": str(uuid.uuid4()),
+                "timestamp": datetime.now().isoformat(),
+                "error": "No relevant information found in the document.",
+                "error_code": "NO_RELEVANT_INFO"
+            }
+        
+        # Build context from chunks
+        def extract_page_content(chunk):
+            # Unpack if it's a (Document, score) tuple
+            if isinstance(chunk, tuple):
+                chunk = chunk[0]
+            # Extract from dict
+            if isinstance(chunk, dict):
+                return chunk.get("page_content", "")
+            # Extract from Document object
+            return getattr(chunk, "page_content", "")
 
-        # context = "\n\n".join([chunk.page_content for chunk , _ in relevant_chunks])
+        context = "\n\n".join([
+            content for chunk in relevant_chunks
+            if (content := extract_page_content(chunk))
+        ])
         
         # Get response from LLM
-        response = stream_ollama_response(
+        response = _get_ollama_response_sync(
             query=request.query,
             context=context,
             model=request.model,
             temperature=request.temperature
         )
+        
+        # Get source metadata
+        sources = []
+        for chunk in relevant_chunks:
+            if isinstance(chunk, tuple) and hasattr(chunk[0], 'metadata'):
+                sources.append(chunk[0].metadata.get("source", "Unknown"))
+            elif hasattr(chunk, 'metadata'):
+                sources.append(chunk.metadata.get("source", "Unknown"))
+            else:
+                sources.append("Unknown")
         
         # Prepare response
         return {
@@ -216,7 +446,7 @@ async def handle_query(request: QueryRequest):
             "message_id": str(uuid.uuid4()),
             "timestamp": datetime.now().isoformat(),
             "response": response,
-            "sources": [chunk.metadata.get("source", "Unknown") for chunk in relevant_chunks],
+            "sources": sources,
             "document": request.document
         }
         
@@ -284,3 +514,8 @@ if __name__ == "__main__":
     else:
         # Development mode
         uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+
+
+
+# ...rest of the file remains the same...

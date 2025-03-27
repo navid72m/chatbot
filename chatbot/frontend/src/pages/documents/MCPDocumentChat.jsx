@@ -3,18 +3,16 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { getBackendURL } from '@/api/baseURL'; // adjust based on actual path
 
-
-// Performance optimizations:
-// 1. Using useCallback for stable function references
-// 2. Debouncing configuration changes
-// 3. Using WebSocket more efficiently
-// 4. Memoizing components when beneficial
-// 5. Proper cleanup to prevent memory leaks
-
-const MCPDocumentChat = () => {
+// MCPDocumentChat component
+const MCPDocumentChat = ({ 
+  onStreamingStateChange = () => {}, 
+  onError = () => {},
+  initialStreamingEnabled = true
+}) => {
   // Server state
   const [connected, setConnected] = useState(false);
   const [serverInfo, setServerInfo] = useState(null);
+  const [streamingSupported, setStreamingSupported] = useState(initialStreamingEnabled);
   
   // Upload state
   const [file, setFile] = useState(null);
@@ -28,7 +26,9 @@ const MCPDocumentChat = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [currentStream, setCurrentStream] = useState(null);
   const messagesEndRef = useRef(null);
+  const eventSourceRef = useRef(null);
   
   // Advanced options state with debounce mechanism
   const [advancedOptions, setAdvancedOptions] = useState({
@@ -45,21 +45,40 @@ const MCPDocumentChat = () => {
   const [showOptions, setShowOptions] = useState(false);
   const [availableModels, setAvailableModels] = useState(["deepseek-r1"]);
   const configChangeTimeoutRef = useRef(null);
+
+  
   
   // Check server connection on component mount
   useEffect(() => {
     checkServerConnection();
+    
+    // Cleanup function to close EventSource on unmount
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
   }, []);
   
   // Check server connection
   const checkServerConnection = async () => {
     try {
       console.log('Checking server connection...');
-      console.log('Backend URL:', getBackendURL());
-      const response = await axios.get(`${getBackendURL()}/`);
+      const backendURL = getBackendURL();
+      console.log('Backend URL:', backendURL);
+      const response = await axios.get(`${backendURL}/`);
       console.log('Server response:', response.data);
       setServerInfo(response.data);
       setConnected(true);
+      
+      // Check if streaming is supported
+      if (response.data.features) {
+        const streamingFeature = response.data.features.find(f => f.id === 'streaming');
+        const isStreamingSupported = streamingFeature ? streamingFeature.enabled : initialStreamingEnabled;
+        console.log('Streaming supported:', isStreamingSupported);
+        setStreamingSupported(isStreamingSupported);
+      }
+      
       fetchAvailableModels();
     } catch (error) {
       console.error('Server connection error:', error);
@@ -105,50 +124,101 @@ const MCPDocumentChat = () => {
   };
   
   // Upload file to server
-  const handleUpload = async () => {
-    if (!file) {
-      setUploadError('Please select a file first');
-      return;
-    }
-    
-    // Create form data
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    setUploading(true);
-    setUploadProgress(0);
-    
-    try {
-      // Upload file to server using REST API
-      const response = await axios.post(`${getBackendURL()}/upload`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          setUploadProgress(percentCompleted);
-        }
-      });
-      
-      console.log('Upload response:', response.data);
-      setUploadResult(response.data);
-      
-      // Reset file input and messages for new document
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+// Upload file to server - fixed version with improved chat transition
+const handleUpload = async () => {
+  if (!file) {
+    setUploadError('Please select a file first');
+    return;
+  }
+  
+  // Create form data
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  setUploading(true);
+  setUploadProgress(0);
+  
+  try {
+    // Upload file to server using REST API
+    console.log('Starting upload to:', `${getBackendURL()}/upload`);
+    const response = await axios.post(`${getBackendURL()}/upload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress: (progressEvent) => {
+        const percentCompleted = Math.round(
+          (progressEvent.loaded * 100) / progressEvent.total
+        );
+        setUploadProgress(percentCompleted);
       }
-      setFile(null);
-      setMessages([]);
-      
-    } catch (error) {
-      console.error('Upload error:', error);
-      setUploadError(error.response?.data?.detail || 'Upload failed. Please try again.');
-    } finally {
-      setUploading(false);
+    });
+    
+    console.log('Upload response:', response.data);
+    
+    // IMPORTANT: Ensure we have a valid upload result
+    if (!response.data || !response.data.filename) {
+      throw new Error('Invalid upload response from server');
     }
-  };
+    
+    // Store upload result with explicit object structure
+    const documentInfo = {
+      filename: response.data.filename,
+      chunks: response.data.chunks || 0,
+      preview: response.data.preview || '',
+      features: response.data.features || {}
+    };
+    
+    // Set upload result in state - this is critical for chat functionality
+    setUploadResult(documentInfo);
+    
+    // Reset file input for next upload
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setFile(null);
+    
+    // Clear any existing messages
+    setMessages([]);
+    
+    // Tell backend which document to use for chat - critical step!
+    try {
+      await axios.post(`${getBackendURL()}/set_document`, { 
+        document: documentInfo.filename 
+      });
+      console.log('Document set in backend:', documentInfo.filename);
+    } catch (setDocErr) {
+      console.warn('Error setting document:', setDocErr);
+      // Continue anyway - not all backends require this
+    }
+    
+    // Add a welcome/confirmation message to initialize chat
+    setMessages([
+      {
+        id: uuidv4(),
+        role: 'system',
+        content: `Document "${documentInfo.filename}" uploaded successfully. You can now ask questions about it.`,
+        timestamp: new Date().toISOString()
+      }
+    ]);
+    
+    // Force-focus the input box to encourage asking a question
+    setTimeout(() => {
+      const textArea = document.querySelector('textarea');
+      if (textArea) {
+        textArea.focus();
+      }
+    }, 300);
+    
+    // Ensure the chat interface is visible by scrolling to it
+    setTimeout(scrollToBottom, 100);
+    
+  } catch (error) {
+    console.error('Upload error:', error);
+    setUploadError(error.response?.data?.detail || 'Upload failed. Please try again.');
+  } finally {
+    setUploading(false);
+  }
+};
   
   // Handle input change for chat
   const handleInputChange = (e) => {
@@ -159,7 +229,7 @@ const MCPDocumentChat = () => {
   const handleAdvancedOptionChange = (e) => {
     const { name, value, type, checked } = e.target;
     const newValue = type === 'checkbox' ? checked : 
-                    type === 'number' ? parseFloat(value) : value;
+                   type === 'number' ? parseFloat(value) : value;
     
     setAdvancedOptions(prev => ({
       ...prev,
@@ -204,83 +274,248 @@ const MCPDocumentChat = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-  
-  // Submit query to server
-  const handleSubmit = useCallback(async () => {
-    if (!input.trim() || loading || !uploadResult || !connected) return;
+
+  // Simple alternative streaming implementation that fallbacks to polling if needed
+  const handleStreamFallback = useCallback(async (userMessageId, currentInput) => {
+    console.log('Using fallback streaming method');
     
-    // Add user message to the conversation
-    const userMessage = {
-      id: uuidv4(),
-      role: 'user',
-      content: input.trim(),
+    // Create initial assistant message
+    const assistantMessageId = uuidv4();
+    const initialAssistantMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      isStreaming: true,
       timestamp: new Date().toISOString()
     };
     
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setLoading(true);
+    // Add initial assistant message
+    setMessages(prev => [...prev.filter(msg => !msg.isThinking), initialAssistantMessage]);
+    setCurrentStream(assistantMessageId);
     
-    // Add a "thinking" message
-    const thinkingMessage = {
-      id: uuidv4() + '-thinking',
-      role: 'system',
-      content: 'Processing your query... (this may take a while)',
-      isThinking: true,
-      timestamp: new Date().toISOString()
-    };
-    
-    setMessages(prev => [...prev, thinkingMessage]);
+    // Notify parent that streaming has started
+    onStreamingStateChange(true);
     
     try {
-      // Send query to server
-      const response = await axios.post(`${getBackendURL()}/query`, {
-        query: userMessage.content,
+      console.log('Sending query to backend with document:', uploadResult.filename);
+      
+      // Start with POST request to initialize the response
+      const response = await axios.post(`${getBackendURL()}/query-sync`, {
+        query: currentInput,
         document: uploadResult.filename,
         ...advancedOptions
       });
       
-      // Remove thinking message
-      setMessages(prev => prev.filter(msg => !msg.isThinking));
+      console.log('Got response from backend:', response.data);
       
-      // Add assistant response
+      // Use polling to simulate streaming
+      let fullResponse = '';
+      const wordCount = currentInput.split(' ').length;
+      const estimatedTokenCount = Math.max(20, wordCount * 3); // Rough estimate
+      const tokenDelay = 50; // ms between tokens
+      
+      if (response.data && response.data.response) {
+        // Get the full response
+        fullResponse = response.data.response;
+        
+        // Simulate streaming by revealing one token at a time
+        let accumulatedText = '';
+        const chunks = fullResponse.split(' ');
+        
+        for (let i = 0; i < chunks.length; i++) {
+          accumulatedText += (i > 0 ? ' ' : '') + chunks[i];
+          
+          // Update message with new token
+          setMessages(prevMessages => {
+            return prevMessages.map(msg => {
+              if (msg.id === assistantMessageId) {
+                return { ...msg, content: accumulatedText };
+              }
+              return msg;
+            });
+          });
+          
+          // Wait for next token
+          if (i < chunks.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, tokenDelay));
+          }
+        }
+      }
+      
+      // Final update with complete response
+      setMessages(prevMessages => {
+        return prevMessages.map(msg => {
+          if (msg.id === assistantMessageId) {
+            return { 
+              ...msg, 
+              content: fullResponse || 'Sorry, I couldn\'t generate a response.',
+              isStreaming: false,
+              sources: response.data.sources || []
+            };
+          }
+          return msg;
+        });
+      });
+      
+      setCurrentStream(null);
+      setLoading(false);
+      onStreamingStateChange(false);
+      
+    } catch (error) {
+      console.error('Error in fallback streaming:', error);
+      
+      // Add error message
+      setMessages(prev => {
+        // Remove the assistant message
+        const filteredMessages = prev.filter(msg => msg.id !== assistantMessageId);
+        
+        // Add error message
+        const errorMessage = {
+          id: uuidv4(),
+          role: 'system',
+          content: 'Failed to process your request. Please try again.',
+          isError: true,
+          timestamp: new Date().toISOString()
+        };
+        
+        return [...filteredMessages, errorMessage];
+      });
+      
+      setLoading(false);
+      setCurrentStream(null);
+      onStreamingStateChange(false);
+      onError('Fallback streaming error: ' + error.message);
+    }
+  }, [advancedOptions, getBackendURL, onError, onStreamingStateChange, uploadResult]);
+
+  // Submit query to server
+// Submit query to server - fixed version with better error handling
+const handleSubmit = useCallback(async () => {
+  // Add detailed logging to help troubleshoot issues
+  console.log('Submit attempt with state:', {
+    inputEmpty: !input.trim(),
+    loading,
+    uploadResult: uploadResult ? 'Yes ('+uploadResult.filename+')' : 'No',
+    connected,
+    messagesCount: messages.length
+  });
+
+  if (!input.trim() || loading || !uploadResult || !connected) {
+    console.log('Submit blocked due to:', {
+      emptyInput: !input.trim(),
+      loading,
+      noUploadResult: !uploadResult,
+      notConnected: !connected
+    });
+    return;
+  }
+  
+  try {
+    // Store current input and clear it
+    const currentInput = input.trim();
+    console.log('Submitting query:', currentInput);
+    console.log('For document:', uploadResult.filename);
+    
+    // Clear input immediately for better UX
+    setInput('');
+    
+    // Cancel any existing stream
+    if (eventSourceRef.current) {
+      console.log('Closing existing EventSource');
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setCurrentStream(null);
+    }
+    
+    // Add user message to the conversation
+    const userMessageId = uuidv4();
+    const userMessage = {
+      id: userMessageId,
+      role: 'user',
+      content: currentInput,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Update messages state with the user message
+    setMessages(prev => [...prev, userMessage]);
+    setLoading(true);
+    
+    // Create a temporary thinking message
+    const thinkingMessageId = uuidv4();
+    const thinkingMessage = {
+      id: thinkingMessageId,
+      role: 'assistant',
+      content: 'Thinking...',
+      isThinking: true,
+      isStreaming: true,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Add thinking message
+    setMessages(prev => [...prev, thinkingMessage]);
+    
+    try {
+      // Make sure document is set on backend
+      await axios.post(`${getBackendURL()}/set_document`, { 
+        document: uploadResult.filename 
+      }).catch(e => console.warn('Set document warning:', e));
+      
+      // Use sync endpoint for better reliability
+      console.log('Sending query to backend...');
+      const response = await axios.post(`${getBackendURL()}/query-sync`, {
+        query: currentInput,
+        document: uploadResult.filename,
+        ...advancedOptions
+      });
+      
+      console.log('Response received:', response.data);
+      
+      // Remove thinking message
+      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
+      
+      if (!response.data || !response.data.response) {
+        throw new Error('Invalid response from server');
+      }
+      
+      // Add assistant response message
       const assistantMessage = {
-        id: response.data.message_id,
+        id: uuidv4(),
         role: 'assistant',
         content: response.data.response,
         sources: response.data.sources || [],
-        reasoning: response.data.reasoning || null,
-        confidence: response.data.confidence || null,
-        retrieval_time: response.data.retrieval_time || null,
-        verification: response.data.verification || null,
-        document: response.data.document,
-        timestamp: response.data.timestamp || new Date().toISOString()
+        timestamp: new Date().toISOString()
       };
       
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages(prev => [...prev.filter(msg => !msg.isThinking), assistantMessage]);
+      scrollToBottom();
+      
     } catch (error) {
       console.error('Query error:', error);
       
       // Remove thinking message
-      setMessages(prev => prev.filter(msg => !msg.isThinking));
+      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
       
       // Add error message
       const errorMessage = {
         id: uuidv4(),
         role: 'system',
-        content: error.response?.data?.detail || 'An error occurred while processing your request.',
+        content: `Error: ${error.message || 'Failed to get response from server'}. Please try again.`,
         isError: true,
         timestamp: new Date().toISOString()
       };
       
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => [...prev.filter(msg => !msg.isThinking), errorMessage]);
     } finally {
       setLoading(false);
     }
-  }, [input, loading, uploadResult, connected, advancedOptions]);
+  } catch (error) {
+    console.error('Unexpected error during submit:', error);
+    setLoading(false);
+  }
+}, [input, loading, uploadResult, connected, advancedOptions, getBackendURL, scrollToBottom]);
   
-  // Connection status indicator - memoized for performance
-  const ConnectionStatus = React.memo(() => (
+  // Connection status indicator
+  const ConnectionStatus = () => (
     <div style={{ 
       position: 'fixed', 
       top: '10px', 
@@ -306,12 +541,58 @@ const MCPDocumentChat = () => {
       }}></div>
       {connected ? 'Connected to Server' : 'Disconnected'}
     </div>
-  ));
+  );
+  
+  // Streaming indicator component
+  const StreamingIndicator = () => (
+    <div className="typing-indicator">
+      <span></span><span></span><span></span>
+    </div>
+  );
+  
+  // Debugging component - toggle with key press
+  const [showDebug, setShowDebug] = useState(false);
+  useEffect(() => {
+    const toggleDebug = (e) => {
+      if (e.ctrlKey && e.key === 'd') {
+        setShowDebug(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', toggleDebug);
+    return () => window.removeEventListener('keydown', toggleDebug);
+  }, []);
   
   return (
     <div style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '24px' }}>MCP Document Chat</h1>
       <ConnectionStatus />
+      
+      {/* Debug info panel - hidden by default, toggle with Ctrl+D */}
+      {showDebug && (
+        <div style={{
+          position: 'fixed',
+          bottom: 10,
+          right: 10,
+          width: 300,
+          maxHeight: 400,
+          overflowY: 'auto',
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          color: 'white',
+          padding: 10,
+          fontFamily: 'monospace',
+          fontSize: 12,
+          zIndex: 1000,
+          borderRadius: 4
+        }}>
+          <div>Connected: {connected ? 'Yes' : 'No'}</div>
+          <div>Upload Result: {uploadResult ? 'Yes' : 'No'}</div>
+          <div>Doc: {uploadResult?.filename || 'None'}</div>
+          <div>Messages: {messages.length}</div>
+          <div>Loading: {loading ? 'Yes' : 'No'}</div>
+          <div>Streaming: {currentStream ? 'Yes' : 'No'}</div>
+          <button onClick={() => console.log({messages, uploadResult})}>Log State</button>
+        </div>
+      )}
       
       <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '24px' }}>
         {/* Left sidebar */}
@@ -667,7 +948,7 @@ const MCPDocumentChat = () => {
             <h2 style={{ margin: 0, fontSize: '18px' }}>Document Chat</h2>
             <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#64748b' }}>
               {uploadResult 
-                ? 'Ask questions about your uploaded document' 
+                ? `Ask questions about: ${uploadResult.filename}` 
                 : 'Upload a document to start chatting'}
             </p>
           </div>
@@ -728,7 +1009,7 @@ const MCPDocumentChat = () => {
                 <p>Your document is ready. Type a question below to start chatting about its contents.</p>
               </div>
             ) : (
-              // Use React.memo to optimize rendering of message list
+              // Map through and render messages
               messages.map(message => (
                 <div 
                   key={message.id} 
@@ -738,15 +1019,28 @@ const MCPDocumentChat = () => {
                     borderRadius: '8px',
                     alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
                     backgroundColor: message.role === 'user' ? '#4f46e5' : 
-                                    message.role === 'system' ? (message.isThinking ? '#f97316' : '#f87171') : 
+                                    message.role === 'system' ? (message.isThinking ? '#f97316' : '#f8fafc') : 
                                     '#ffffff',
                     color: message.role === 'user' ? 'white' : 
-                          message.role === 'system' ? 'white' : '#1e293b',
-                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
+                          message.role === 'system' ? (message.isError ? '#ef4444' : '#1e293b') : '#1e293b',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                    borderLeft: message.isStreaming ? '3px solid #3b82f6' : 
+                               message.role === 'system' ? '3px solid #64748b' : 'none',
+                    transition: 'border-left-color 0.3s ease',
+                    border: message.role === 'system' ? '1px solid #e2e8f0' : 'none'
                   }}
                 >
-                  <div style={{ fontSize: '14px', whiteSpace: 'pre-wrap' }}>
+                  <div 
+                    style={{ 
+                      fontSize: '14px', 
+                      whiteSpace: 'pre-wrap',
+                    }}
+                    className={message.isStreaming ? 'streaming-message' : ''}
+                  >
                     {message.content}
+                    {message.isStreaming && (
+                      <StreamingIndicator />
+                    )}
                   </div>
                   
                   {/* Display sources if available */}
@@ -907,15 +1201,18 @@ const MCPDocumentChat = () => {
         }
         
         .typing-indicator {
-          display: flex;
+          display: inline-flex;
           align-items: center;
           gap: 4px;
+          margin-left: 8px;
+          height: 16px;
+          vertical-align: middle;
         }
         
         .typing-indicator span {
-          width: 8px;
-          height: 8px;
-          background-color: #ffffff;
+          width: 6px;
+          height: 6px;
+          background-color: #3b82f6;
           border-radius: 50%;
           display: inline-block;
           animation: bounce 1.4s infinite ease-in-out both;
@@ -935,6 +1232,16 @@ const MCPDocumentChat = () => {
           } 40% { 
             transform: scale(1.0);
           }
+        }
+        
+        /* Add a subtle blinking cursor animation for streaming messages */
+        @keyframes blink-cursor {
+          0%, 100% { border-left-color: transparent; }
+          50% { border-left-color: #3b82f6; }
+        }
+        
+        .streaming-message {
+          animation: blink-cursor 1s step-end infinite;
         }
       `}</style>
     </div>

@@ -1,0 +1,73 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Starting Application...</title>
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          background-color: rgba(30, 30, 30, 0.95);
+          color: #fff;
+          margin: 0;
+          padding: 20px;
+          border-radius: 12px;
+          height: 100vh;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          overflow: hidden;
+        }
+        h2 {
+          margin-bottom: 20px;
+          font-weight: 400;
+        }
+        .spinner {
+          width: 40px;
+          height: 40px;
+          border: 4px solid rgba(255, 255, 255, 0.1);
+          border-radius: 50%;
+          border-top-color: #3b82f6;
+          animation: spin 1s ease-in-out infinite;
+          margin-bottom: 30px;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        .status-log {
+          background-color: rgba(0, 0, 0, 0.3);
+          border-radius: 6px;
+          padding: 10px;
+          width: 90%;
+          height: 120px;
+          overflow-y: auto;
+          font-family: monospace;
+          font-size: 12px;
+          margin-top: 10px;
+        }
+        .status-log p {
+          margin: 4px 0;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+      </style>
+    </head>
+    <body>
+      <h2>Starting Application...</h2>
+      <div class="spinner"></div>
+      <div class="status-log" id="status-log"></div>
+      
+      <script>
+        const { ipcRenderer } = require('electron');
+        const logContainer = document.getElementById('status-log');
+        
+        ipcRenderer.on('status-update', (event, message) => {
+          const p = document.createElement('p');
+          p.textContent = message;
+          logContainer.appendChild(p);
+          logContainer.scrollTop = logContainer.scrollHeight;
+        });
+      </script>
+    </body>
+    </html>
