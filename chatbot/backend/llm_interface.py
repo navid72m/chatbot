@@ -1,184 +1,207 @@
-# llm_interface.py - Enhanced Interface for Ollama LLM with quantization support
-import requests
-import json
-from typing import List, Dict, Optional, Union
 import logging
+from typing import List, Optional, Dict, Any
+import ctypes
+import os
+import numpy as np
+from llama_cpp import Llama
+
+
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Ollama API URL - ensure this is correct
-OLLAMA_API = "http://localhost:11434"
+# class LlamaCppModel:
+#     """
+#     Low-level interface for llama.cpp GGUF models using ctypes
+#     """
+    
+#     def __init__(
+#         self, 
+#         model_path: str, 
+#         n_ctx: int = 4096,  # Context window size
+#         n_batch: int = 512  # Batch size
+#     ):
+#         """
+#         Initialize the llama.cpp model
+        
+#         Args:
+#             model_path: Full path to the GGUF model file
+#             n_ctx: Context window size
+#             n_batch: Batch size for processing
+#         """
+#         try:
+#             # Determine library path (adjust for your system)
+#             lib_paths = [
+#                 "/usr/local/lib/libllama.dylib",  # macOS typical location
+#                 "/opt/homebrew/lib/libllama.dylib",  # Homebrew on Mac
+#                 os.path.expanduser("~/.local/lib/libllama.dylib"),  # User local
+#             ]
+            
+#             # Find the first existing library
+#             lib_path = next((path for path in lib_paths if os.path.exists(path)), None)
+            
+#             if not lib_path:
+#                 raise FileNotFoundError("Could not find llama.cpp shared library")
+            
+#             # Load the library
+#             self.lib = ctypes.CDLL(lib_path)
+            
+#             # Set up model loading function signatures
+#             # Note: These might need adjustment based on your specific llama.cpp version
+#             self.lib.llama_load_model_from_file.argtypes = [ctypes.c_char_p, ctypes.c_int]
+#             self.lib.llama_load_model_from_file.restype = ctypes.c_void_p
+            
+#             # Prepare model path
+#             model_path_bytes = model_path.encode('utf-8')
+            
+#             # Load the model
+#             self.model = self.lib.llama_load_model_from_file(
+#                 model_path_bytes, 
+#                 n_ctx
+#             )
+            
+#             if not self.model:
+#                 raise RuntimeError(f"Failed to load model: {model_path}")
+            
+#             # Create context
+#             self.lib.llama_new_context_with_model.argtypes = [ctypes.c_void_p, ctypes.c_int]
+#             self.lib.llama_new_context_with_model.restype = ctypes.c_void_p
+            
+#             self.context = self.lib.llama_new_context_with_model(self.model, n_batch)
+            
+#             if not self.context:
+#                 raise RuntimeError("Failed to create model context")
+            
+#             logger.info(f"Successfully loaded model: {model_path}")
+        
+#         except Exception as e:
+#             logger.error(f"Model initialization error: {e}")
+#             raise
+    
+#     def generate(
+#         self, 
+#         prompt: str, 
+#         max_tokens: int = 200, 
+#         temperature: float = 0.7
+#     ) -> str:
+#         """
+#         Generate text using the loaded model
+        
+#         Args:
+#             prompt: Input text prompt
+#             max_tokens: Maximum number of tokens to generate
+#             temperature: Sampling temperature
+        
+#         Returns:
+#             Generated text string
+#         """
+#         try:
+#             # Placeholder for text generation
+#             # In a real implementation, you'd use ctypes to:
+#             # 1. Tokenize the prompt
+#             # 2. Set up generation parameters
+#             # 3. Generate tokens
+#             # 4. Detokenize the output
+            
+#             logger.info(f"Generating text for prompt: {prompt[:100]}...")
+            
+#             # Simulated generation for demonstration
+#             return f"Generated response to: {prompt[:50]}..."
+        
+#         except Exception as e:
+#             logger.error(f"Text generation error: {e}")
+#             raise
+    
+#     def __del__(self):
+#         """Clean up resources"""
+#         try:
+#             if hasattr(self, 'context') and self.context:
+#                 self.lib.llama_free(self.context)
+#             if hasattr(self, 'model') and self.model:
+#                 self.lib.llama_free_model(self.model)
+#         except Exception as e:
+#             logger.error(f"Cleanup error: {e}")
 
 def query_ollama(
     query: str, 
-    context: str, 
+    context: str = "", 
     model: str = "mistral", 
     temperature: float = 0.7,
     quantization: str = "4bit"
 ) -> str:
-    """Query Ollama with the given prompt, supporting quantization settings"""
+    """
+    Unified query interface for language models
     
-    # Get available models first
-    available_models = []
+    Args:
+        query: User's query
+        context: Additional context information
+        model: Model name
+        temperature: Sampling temperature
+        quantization: Quantization level (not used for GGUF, kept for API compatibility)
+    
+    Returns:
+        Model-generated response
+    """
     try:
-        available_models = list_ollama_models()
-        logger.info(f"Available models: {available_models}")
-    except Exception as e:
-        logger.warning(f"Could not get available models: {e}")
-    
-    # Format the model name based on quantization
-    model_name = model
-    if quantization and quantization.lower() != "none":
-        if quantization == "4bit":
-            model_name = f"{model}:q4_0"
-        elif quantization == "8bit":
-            model_name = f"{model}:q8_0"
-        elif quantization == "1bit":
-            model_name = f"{model}:q1_1"
-    
-    # Check if model exists, if we were able to get the list
-    if available_models and model_name not in available_models:
-        # Try base model as fallback
-        if model in available_models:
-            logger.info(f"Model {model_name} not found, falling back to {model}")
-            model_name = model
-        else:
-            logger.info(f"Attempting to use model {model_name} anyway")
-    
-    logger.info(f"Using model: {model_name} (quantization: {quantization})")
-    
-    # Format the system message with context
-    system_message = f"""
+        # Determine model path (update with your actual path)
+        model_path = os.path.expanduser("~/startup/chatbot/external/mistral-7b-instruct-v0.1.Q4_K_M.gguf")
+        
+        # Ensure model path exists
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model not found at {model_path}")
+        
+        # Prepare full prompt with context
+        full_prompt = f"""
 Context information is below.
 ---------------------
 {context}
 ---------------------
 
 Given the context information and not prior knowledge, answer the question.
+
+Question: {query}
 """.strip()
+        
+        # Initialize model
+        # llm = LlamaCppModel(model_path=model_path)
+        
+        # # Generate response
+        # response = llm.generate(
+        #     prompt=full_prompt, 
+        #     temperature=temperature
+        # )
+        llm = Llama(
+        model_path="/Users/seyednavidmirnourilangeroudi/startup/chatbot/external/mistral-7b-instruct-v0.1.Q4_K_M.gguf",
+        n_ctx=4096,
+        n_threads=4  # Adjust based on CPU
+        )
 
-    # Chat request data
-    data = {
-        "model": model_name,
-        "messages": [
-            {
-                "role": "system",
-                "content": system_message
-            },
-            {
-                "role": "user",
-                "content": query
-            }
-        ],
-        "temperature": temperature,
-        "stream": False
-    }
+        response = llm(
+            prompt=full_prompt,
+            max_tokens=400,
+            temperature=0.7,
+        )
+
+# print(response["choices"][0]["text"])
+        
+        return response
     
-    try:
-        # Log the API request
-        logger.info(f"Sending request to: {OLLAMA_API}/api/chat")
-        logger.info(f"Request data: {json.dumps(data, indent=2)}")
-        
-        # Make the API request
-        response = requests.post(f"{OLLAMA_API}/api/chat", json=data)
-        
-        # Check for errors
-        if response.status_code == 404:
-            # Try the generate endpoint as fallback
-            logger.info("Chat endpoint returned 404, trying generate endpoint instead")
-            generate_data = {
-                "model": model_name,
-                "prompt": f"{system_message}\n\nQuestion: {query}",
-                "temperature": temperature,
-                "stream": False
-            }
-            response = requests.post(f"{OLLAMA_API}/api/generate", json=generate_data)
-        
-        response.raise_for_status()
-        
-        # Parse the response based on endpoint used
-        result = response.json()
-        
-        if "message" in result:
-            # Chat API response
-            response_text = result["message"]["content"].strip()
-        elif "response" in result:
-            # Generate API response
-            response_text = result["response"].strip()
-        else:
-            logger.error(f"Unexpected response format: {result}")
-            response_text = "Error: Unexpected response format from Ollama"
-        
-        logger.info(f"Response status: {response.status_code}")
-        logger.info(f"Response length: {len(response_text)}")
-        
-        return response_text
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error querying Ollama: {str(e)}")
-        if hasattr(e, 'response') and e.response is not None:
-            logger.error(f"Response status code: {e.response.status_code}")
-            logger.error(f"Response content: {e.response.text}")
-        
-        # Specific handling for model not found
-        if hasattr(e, 'response') and e.response is not None and e.response.status_code == 404:
-            error_text = e.response.text
-            if "model not found" in error_text.lower():
-                # Try to pull the model
-                try:
-                    logger.info(f"Model not found, attempting to pull {model}")
-                    pull_response = requests.post(f"{OLLAMA_API}/api/pull", json={"name": model})
-                    if pull_response.status_code == 200:
-                        return f"Model {model} not found. I've started downloading it. Please try again in a moment."
-                except Exception as pull_error:
-                    logger.error(f"Error pulling model: {pull_error}")
-        
-        raise Exception(f"Error querying Ollama: {str(e)}")
-    
-    
+    except Exception as e:
+        logger.error(f"Query error: {e}")
+        return f"Error generating response: {str(e)}"
+
 def list_ollama_models() -> List[str]:
-    """List available models from Ollama"""
-    try:
-        logger.info(f"Fetching models from: {OLLAMA_API}/api/tags")
-        response = requests.get(f"{OLLAMA_API}/api/tags")
-        response.raise_for_status()
-        
-        result = response.json()
-        logger.info(f"Found {len(result.get('models', []))} models")
-        
-        # Process the models to show base models
-        base_models = set()
-        for model in result.get("models", []):
-            name = model.get("name", "")
-            # Strip quantization suffixes for grouping
-            base_name = name.split(":")[0]
-            base_models.add(base_name)
-        
-        return list(base_models)
-    except Exception as e:
-        logger.error(f"Error listing Ollama models: {str(e)}")
-        # Return default model if we can't list models
-        return ["mistral"]
-
-# Test the API connection if this file is run directly
-if __name__ == "__main__":
-    print("Testing Ollama API connection...")
-    try:
-        models = list_ollama_models()
-        print(f"Available models: {models}")
-        
-        if models:
-            test_model = models[0]
-            print(f"Testing query with model: {test_model}")
-            response = query_ollama(
-                query="What is the capital of France?",
-                context="France is a country in Europe. Its capital is Paris.",
-                model=test_model,
-                temperature=0.7,
-                quantization="4bit"
-            )
-            print(f"Response: {response}")
-    except Exception as e:
-        print(f"Error testing Ollama API: {e}")
+    """
+    List available models
+    
+    Returns:
+        List of model names
+    """
+    # In a real implementation, scan the Ollama models directory
+    return [
+        "mistral",
+        "llama3",
+        "phi"
+    ]

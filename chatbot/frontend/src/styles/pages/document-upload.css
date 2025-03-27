@@ -1,0 +1,124 @@
+/* Document upload page styles */
+.document-upload-page {
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  
+  .page-header {
+    margin-bottom: 24px;
+  }
+  
+  .page-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary, #1e293b);
+    margin-bottom: 8px;
+  }
+  
+  .page-header p {
+    font-size: 16px;
+    color: var(--text-secondary, #64748b);
+  }
+  
+  .upload-container {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 24px;
+  }
+  
+  .upload-instructions {
+    background-color: white;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .upload-instructions h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text-primary, #1e293b);
+  }
+  
+  .upload-instructions ul {
+    list-style-type: disc;
+    padding-left: 20px;
+  }
+  
+  .upload-instructions li {
+    margin-bottom: 12px;
+    color: var(--text-secondary, #64748b);
+  }
+  
+  .upload-form-container {
+    background-color: white;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .upload-form-container h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text-primary, #1e293b);
+  }
+  
+  .upload-success {
+    margin-top: 24px;
+    padding: 16px;
+    background-color: rgba(16, 185, 129, 0.1);
+    border-radius: 8px;
+    border-left: 4px solid var(--success-color, #10b981);
+  }
+  
+  .upload-success h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--success-color, #10b981);
+    margin-bottom: 8px;
+  }
+  
+  .document-details {
+    margin-top: 16px;
+    background-color: white;
+    padding: 16px;
+    border-radius: 4px;
+  }
+  
+  .document-details p {
+    margin-bottom: 8px;
+  }
+  
+  .upload-error-message {
+    margin-top: 24px;
+    padding: 16px;
+    background-color: rgba(239, 68, 68, 0.1);
+    border-radius: 8px;
+    border-left: 4px solid var(--danger-color, #ef4444);
+  }
+  
+  .upload-error-message h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--danger-color, #ef4444);
+    margin-bottom: 8px;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 992px) {
+    .upload-container {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  @media (max-width: 576px) {
+    .document-upload-page {
+      padding: 16px;
+    }
+    
+    .upload-instructions, .upload-form-container {
+      padding: 16px;
+    }
+  }
