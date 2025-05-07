@@ -281,11 +281,11 @@ class AdvancedRAG:
         # Prepare the final response
         response = {
             "answer": answer,
-            # "reasoning": reasoning,
-            # "sources": sources,
-            # "confidence": confidence,
-            # "retrieval_time": elapsed,
-            # "document_count": len(relevant_docs)
+            "reasoning": reasoning,
+            "sources": sources,
+            "confidence": confidence,
+            "retrieval_time": elapsed,
+            "document_count": len(relevant_docs)
         }
         
         # Add verification details if available

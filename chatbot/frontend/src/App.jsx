@@ -5,7 +5,7 @@ import axios from 'axios';
 // Import components with the correct paths
 import MCPDocumentChat from './pages/documents/MCPDocumentChat';
 import ModelDownloadPage from './components/ModelDownloadPage'; // Updated import path
-
+import RAGEvaluationDashboard from './pages/documents/RAGEvaluationDashboard';
 // Simple placeholder component for not found page
 const NotFound = () => <div className="page-container"><h1>404</h1><p>Page not found</p></div>;
 
@@ -172,7 +172,11 @@ function App() {
               selectedModel={modelState.selectedModel}
             />
           } />
-          
+
+          {/* Evaluation dashboard */}
+          <Route path="/evaluation" element={<RAGEvaluationDashboard />} />
+          {/* <Route path="/evaluation" element={<RAGEvaluationDashboard />} /> */}
+
           <Route path="*" element={<NotFound />} />
         </Routes>
         

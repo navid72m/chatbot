@@ -1,10 +1,8 @@
 import os
 import json
 import logging
-import asyncio
-import httpx
 import requests
-from typing import List, Dict, Any, AsyncGenerator, Optional, Union
+from typing import List, Dict, Any
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,170 +20,74 @@ def list_ollama_models() -> List[str]:
             return [model.get("name") for model in models]
         else:
             logger.error(f"Failed to list models: {response.status_code} - {response.text}")
-            return ["deepseek-r1"]  # Default fallback
+            return ["mistral"]  # Default fallback
     except Exception as e:
         logger.error(f"Error listing models: {str(e)}")
-        return ["deepseek-r1"]  # Default fallback
+        return ["mistral"]  # Default fallback
 
-def stream_ollama_response(
-    query: str,
-    context: str,
-    model: str = "deepseek-r1",
-    temperature: float = 0.7,
-    stream: bool = False
-) -> Union[str, AsyncGenerator[str, None]]:
+def stream_ollama_response(query, context, model="mistral", temperature=0.7, quantization=None, timeout=600):
     """
-    Stream response from Ollama API.
+    Send a query to Ollama API with enhanced prompt engineering.
     
     Args:
-        query: The user query
-        context: The context from retrieved documents
-        model: Model to use (e.g., "deepseek-r1", "llama2", etc.)
-        temperature: Sampling temperature (0.0 to 1.0)
-        stream: Whether to stream the response
+        query (str): The user's query
+        context (str): Context information to help answer the query
+        model (str): Which Ollama model to use
+        temperature (float): Temperature for response generation
+        quantization (str): Quantization level (ignored but included for compatibility)
+        timeout (int): Timeout in seconds for the API call
         
     Returns:
-        If stream=False: Complete response as a string
-        If stream=True: AsyncGenerator yielding response tokens
+        str: The generated response text
     """
-    if not stream:
-        return _get_ollama_response_sync(query, context, model, temperature)
-    else:
-        return _stream_ollama_response_async(query, context, model, temperature)
-
-def _get_ollama_response_sync(
-    query: str,
-    context: str,
-    model: str = "deepseek-r1",
-    temperature: float = 0.7
-) -> str:
-    """Get a complete response from Ollama API (non-streaming)."""
-    prompt = _build_prompt(query, context)
-    
     try:
+        logger.info(f"Querying model {model} with temperature {temperature}")
+        
+        # Enhanced prompt with clear instructions
+        prompt = f"""
+You are a precise document assistant. Your task is to answer questions based ONLY on the provided context.
+
+CONTEXT:
+{context}
+
+INSTRUCTION:
+- Answer the question based only on the context above
+- If the answer isn't in the context, say "I don't see information about that in the document"
+- Be concise and direct - focus only on what's asked
+- Do not invent or assume information not present in the context
+- Include only relevant details that directly answer the question
+
+QUESTION:
+{query}
+
+ANSWER:
+"""
+        
+        # Basic payload - keeping it simple
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "temperature": temperature,
+            "stream": False
+        }
+        
+        # Make the API call
         response = requests.post(
             f"{OLLAMA_API_URL}/api/generate",
-            json={
-                "model": model,
-                "prompt": prompt,
-                "temperature": temperature,
-                "stream": False,
-            },
-            timeout=60,  # Increased timeout for longer generations
+            json=payload,
+            timeout=timeout
         )
         
         if response.status_code == 200:
-            return response.json().get("response", "")
+            result = response.json().get("response", "")
+            return result.strip()
         else:
             logger.error(f"Ollama API error: {response.status_code} - {response.text}")
-            return "Sorry, I couldn't process your query due to a server error."
+            return f"Error: The language model returned an error. Please try again."
+            
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout when calling Ollama API after {timeout} seconds")
+        return "The model took too long to respond. Please try a simpler query or a different model."
     except Exception as e:
-        logger.error(f"Error calling Ollama API: {str(e)}")
-        return f"Sorry, I encountered an error: {str(e)}"
-
-async def _stream_ollama_response_async(
-    query: str,
-    context: str,
-    model: str = "deepseek-r1",
-    temperature: float = 0.7
-) -> AsyncGenerator[str, None]:
-    """Stream response from Ollama API token by token."""
-    prompt = _build_prompt(query, context)
-    
-    async with httpx.AsyncClient(timeout=None) as client:
-        try:
-            async with client.stream(
-                "POST",
-                f"{OLLAMA_API_URL}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "temperature": temperature,
-                    "stream": True,
-                },
-            ) as response:
-                if response.status_code != 200:
-                    error_text = await response.aread()
-                    logger.error(f"Ollama API streaming error: {response.status_code} - {error_text.decode('utf-8')}")
-                    yield "Sorry, I couldn't process your query due to a server error."
-                    return
-                
-                # Process the streaming response
-                async for chunk in response.aiter_text():
-                    # Ollama sends each chunk as a complete JSON object
-                    try:
-                        chunk_data = json.loads(chunk)
-                        token = chunk_data.get("response", "")
-                        # Only yield non-empty tokens
-                        if token:
-                            yield token
-                        
-                        # Break if done
-                        if chunk_data.get("done", False):
-                            break
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse JSON from chunk: {chunk}")
-                        continue
-                    except Exception as e:
-                        logger.error(f"Error processing stream chunk: {str(e)}")
-                        continue
-                
-        except Exception as e:
-            logger.error(f"Error streaming from Ollama API: {str(e)}")
-            yield f"Sorry, I encountered an error: {str(e)}"
-
-def _build_prompt(query: str, context: str) -> str:
-    """Build a formatted prompt with user query and document context."""
-    prompt = f"""
-You are a helpful AI assistant tasked with answering questions about documents.
-Below is a relevant section from a document:
-
----
-{context}
----
-
-Answer the following question based on the document above:
-{query}
-
-Your response should be accurate, concise, and directly address the question.
-If the document does not contain information to answer the question, say so rather than speculating.
-"""
-    return prompt.strip()
-
-# Advanced response generation function for future use with more complex reasoning
-async def generate_advanced_response(
-    query: str,
-    context: str,
-    model: str = "deepseek-r1",
-    temperature: float = 0.7,
-    use_cot: bool = True,
-    verify_answers: bool = True,
-) -> Dict[str, Any]:
-    """
-    Generate a response with optional chain-of-thought reasoning and answer verification.
-    This is a placeholder for future implementation.
-    """
-    # Base response using standard approach
-    response_text = stream_ollama_response(query, context, model, temperature)
-    
-    result = {
-        "response": response_text,
-        "reasoning": None,
-        "verification": None,
-        "confidence": 0.85,  # Placeholder confidence
-    }
-    
-    # Future: Implement chain-of-thought reasoning
-    if use_cot:
-        # This would be implemented to show reasoning steps
-        result["reasoning"] = "Reasoning process will be implemented in a future update."
-    
-    # Future: Implement answer verification
-    if verify_answers:
-        # This would be implemented to verify the response against source
-        result["verification"] = {
-            "is_verified": True,
-            "unsupported_claims": []
-        }
-    
-    return result
+        logger.error(f"Error in stream_ollama_response: {str(e)}")
+        return f"An error occurred when processing your question. Please try again."

@@ -99,8 +99,8 @@ advanced_rag = AdvancedRAG(
     reasoner=reasoner
 )
 
-# Storage directory for documents
-UPLOAD_DIR = "uploads"
+# Get upload directory from environment variable or use default
+UPLOAD_DIR = os.getenv('UPLOADS_DIR', 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Initialize FastAPI app
