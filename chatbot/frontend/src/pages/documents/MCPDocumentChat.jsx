@@ -2,17 +2,17 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { getBackendURL } from '@/api/baseURL'; // adjust based on actual path
+import { useNavigate } from 'react-router-dom';
 
-// MCPDocumentChat component
+// MCPDocumentChat component with RAG evaluation integration
 const MCPDocumentChat = ({ 
-  onStreamingStateChange = () => {}, 
-  onError = () => {},
-  initialStreamingEnabled = true
+  onError = () => {}
 }) => {
+  const navigate = useNavigate();
+  
   // Server state
   const [connected, setConnected] = useState(false);
   const [serverInfo, setServerInfo] = useState(null);
-  const [streamingSupported, setStreamingSupported] = useState(initialStreamingEnabled);
   
   // Upload state
   const [file, setFile] = useState(null);
@@ -26,38 +26,32 @@ const MCPDocumentChat = ({
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [currentStream, setCurrentStream] = useState(null);
   const messagesEndRef = useRef(null);
-  const eventSourceRef = useRef(null);
   
-  // Advanced options state with debounce mechanism
+  // Evaluation state
+  const [evaluating, setEvaluating] = useState(false);
+  const [evaluationError, setEvaluationError] = useState(null);
+  
+  // Simplified options with better defaults for performance
   const [advancedOptions, setAdvancedOptions] = useState({
-    use_advanced_rag: true,
-    use_cot: true,
-    use_kg: true,
-    verify_answers: true,
-    use_multihop: true,
-    model: "deepseek-r1",
-    temperature: 0.7,
-    context_window: 10,
-    quantization: "4bit"
+    use_advanced_rag: true,  // Simplified to basic RAG
+    use_llama_index: true,   // Added option for LlamaIndex
+    model: "mixtral-8x7b-instruct-v0.1.Q4_K_M",  // Smaller model by default
+    temperature: 0.3,         // Lower temperature for more factual responses
+    context_window: 5,        // Fewer chunks for speed
+    quantization: "4bit"      // 4-bit quantization for better performance
   });
   const [showOptions, setShowOptions] = useState(false);
-  const [availableModels, setAvailableModels] = useState(["deepseek-r1"]);
-  const configChangeTimeoutRef = useRef(null);
+  const [availableModels, setAvailableModels] = useState(["mixtral-8x7b-instruct-v0.1.Q4_K_M"]);
+  const [suggestedQuestions, setSuggestedQuestions] = useState([]);
+  const [ragOptions, setRagOptions] = useState([
+    { value: "default", label: "Default RAG" },
+    { value: "llama_index", label: "LlamaIndex RAG (Advanced)" }
+  ]);
 
-  
-  
   // Check server connection on component mount
   useEffect(() => {
     checkServerConnection();
-    
-    // Cleanup function to close EventSource on unmount
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-    };
   }, []);
   
   // Check server connection
@@ -65,21 +59,11 @@ const MCPDocumentChat = ({
     try {
       console.log('Checking server connection...');
       const backendURL = getBackendURL();
-      console.log('Backend URL:', backendURL);
       const response = await axios.get(`${backendURL}/`);
-      console.log('Server response:', response.data);
       setServerInfo(response.data);
       setConnected(true);
-      
-      // Check if streaming is supported
-      if (response.data.features) {
-        const streamingFeature = response.data.features.find(f => f.id === 'streaming');
-        const isStreamingSupported = streamingFeature ? streamingFeature.enabled : initialStreamingEnabled;
-        console.log('Streaming supported:', isStreamingSupported);
-        setStreamingSupported(isStreamingSupported);
-      }
-      
       fetchAvailableModels();
+      fetchRagOptions();
     } catch (error) {
       console.error('Server connection error:', error);
       setConnected(false);
@@ -95,6 +79,18 @@ const MCPDocumentChat = ({
       }
     } catch (error) {
       console.error('Error fetching models:', error);
+    }
+  };
+  
+  // Fetch RAG options
+  const fetchRagOptions = async () => {
+    try {
+      const response = await axios.get(`${getBackendURL()}/rag-options`);
+      if (response.data && response.data.options) {
+        setRagOptions(response.data.options);
+      }
+    } catch (error) {
+      console.error('Error fetching RAG options:', error);
     }
   };
   
@@ -123,110 +119,132 @@ const MCPDocumentChat = ({
     e.stopPropagation();
   };
   
-  // Upload file to server
-// Upload file to server - fixed version with improved chat transition
-const handleUpload = async () => {
-  if (!file) {
-    setUploadError('Please select a file first');
-    return;
-  }
-  
-  // Create form data
-  const formData = new FormData();
-  formData.append('file', file);
-  
-  setUploading(true);
-  setUploadProgress(0);
-  
-  try {
-    // Upload file to server using REST API
-    console.log('Starting upload to:', `${getBackendURL()}/upload`);
-    const response = await axios.post(`${getBackendURL()}/upload`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-      onUploadProgress: (progressEvent) => {
-        const percentCompleted = Math.round(
-          (progressEvent.loaded * 100) / progressEvent.total
-        );
-        setUploadProgress(percentCompleted);
-      }
-    });
-    
-    console.log('Upload response:', response.data);
-    
-    // IMPORTANT: Ensure we have a valid upload result
-    if (!response.data || !response.data.filename) {
-      throw new Error('Invalid upload response from server');
+  // Upload file to server - simplified version
+  const handleUpload = async () => {
+    if (!file) {
+      setUploadError('Please select a file first');
+      return;
     }
     
-    // Store upload result with explicit object structure
-    const documentInfo = {
-      filename: response.data.filename,
-      chunks: response.data.chunks || 0,
-      preview: response.data.preview || '',
-      features: response.data.features || {}
-    };
+    // Create form data
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('use_advanced_rag', advancedOptions.use_advanced_rag);
+    formData.append('use_llama_index', advancedOptions.use_llama_index);
     
-    // Set upload result in state - this is critical for chat functionality
-    setUploadResult(documentInfo);
+    setUploading(true);
+    setUploadProgress(0);
     
-    // Reset file input for next upload
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-    setFile(null);
-    
-    // Clear any existing messages
-    setMessages([]);
-    
-    // Tell backend which document to use for chat - critical step!
     try {
-      await axios.post(`${getBackendURL()}/set_document`, { 
-        document: documentInfo.filename 
+      // Upload file to server
+      const response = await axios.post(`${getBackendURL()}/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
+          setUploadProgress(percentCompleted);
+        },
+        timeout: 30000000 // 30 second timeout
       });
-      console.log('Document set in backend:', documentInfo.filename);
-    } catch (setDocErr) {
-      console.warn('Error setting document:', setDocErr);
-      // Continue anyway - not all backends require this
+      
+      // Ensure we have a valid upload result
+      if (!response.data || !response.data.filename) {
+        throw new Error('Invalid upload response from server');
+      }
+      
+      // Store upload result
+      const documentInfo = {
+        filename: response.data.filename,
+        chunks: response.data.chunks || 0,
+        preview: response.data.preview || ''
+      };
+      
+      setUploadResult(documentInfo);
+      
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setFile(null);
+      
+      // Clear messages
+      setMessages([]);
+      
+      // Set document in backend
+      try {
+        await axios.post(`${getBackendURL()}/set_document`, { 
+          document: documentInfo.filename 
+        });
+      } catch (err) {
+        console.warn('Error setting document:', err);
+      }
+      try {
+        const res = await axios.get(`${getBackendURL()}/suggestions?document=${documentInfo.filename}`);
+        setSuggestedQuestions(res.data.questions || []);
+      } catch (err) {
+        console.warn("Couldn't fetch suggested questions:", err);
+      }
+      
+      
+      // Add welcome message
+      setMessages([
+        {
+          id: uuidv4(),
+          role: 'system',
+          content: `Document "${documentInfo.filename}" uploaded successfully. You can now ask questions about it.`,
+          timestamp: new Date().toISOString()
+        }
+      ]);
+      
+      // Focus input
+      setTimeout(() => {
+        const textArea = document.querySelector('textarea');
+        if (textArea) {
+          textArea.focus();
+        }
+      }, 300);
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      setUploadError(error.response?.data?.detail || 'Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
     }
-    
-    // Add a welcome/confirmation message to initialize chat
-    setMessages([
-      {
-        id: uuidv4(),
-        role: 'system',
-        content: `Document "${documentInfo.filename}" uploaded successfully. You can now ask questions about it.`,
-        timestamp: new Date().toISOString()
-      }
-    ]);
-    
-    // Force-focus the input box to encourage asking a question
-    setTimeout(() => {
-      const textArea = document.querySelector('textarea');
-      if (textArea) {
-        textArea.focus();
-      }
-    }, 300);
-    
-    // Ensure the chat interface is visible by scrolling to it
-    setTimeout(scrollToBottom, 100);
-    
-  } catch (error) {
-    console.error('Upload error:', error);
-    setUploadError(error.response?.data?.detail || 'Upload failed. Please try again.');
-  } finally {
-    setUploading(false);
-  }
-};
+  };
   
-  // Handle input change for chat
+  // Handle input change
   const handleInputChange = (e) => {
     setInput(e.target.value);
   };
   
-  // Handle advanced option changes with debouncing
-  const handleAdvancedOptionChange = (e) => {
+  // Format response for display
+  const formatResponseForDisplay = (text, sources) => {
+    if (!text) return "No response received.";
+    
+    // Clean up bullet points for consistency
+    let formattedText = text.replace(/^\s*-\s+/gm, "• ");
+    
+    // Add sources if available
+    if (sources && sources.length > 0) {
+      const uniqueSources = [...new Set(sources)];
+      
+      // Don't add sources if it's just the current document
+      if (uniqueSources.length === 1 && uniqueSources[0] === uploadResult?.filename) {
+        return formattedText;
+      }
+      
+      const sourcesList = uniqueSources.map(source => `• ${source}`).join('\n');
+      return `${formattedText}\n\n${sourcesList.length > 0 ? 'Sources:\n' + sourcesList : ''}`;
+    }
+    
+    return formattedText;
+  };
+  
+  // Handle option changes
+  const handleOptionChange = (e) => {
     const { name, value, type, checked } = e.target;
     const newValue = type === 'checkbox' ? checked : 
                    type === 'number' ? parseFloat(value) : value;
@@ -235,34 +253,6 @@ const handleUpload = async () => {
       ...prev,
       [name]: newValue
     }));
-    
-    // Debounce configuration changes to avoid too many requests
-    if (configChangeTimeoutRef.current) {
-      clearTimeout(configChangeTimeoutRef.current);
-    }
-    
-    configChangeTimeoutRef.current = setTimeout(() => {
-      // Send configuration update to server
-      updateConfiguration({ [name]: newValue });
-      configChangeTimeoutRef.current = null;
-    }, 500);
-  };
-  
-  // Update configuration on server
-  const updateConfiguration = async (config) => {
-    try {
-      await axios.post(`${getBackendURL()}/configure`, { config });
-    } catch (error) {
-      console.error('Error updating configuration:', error);
-    }
-  };
-  
-  // Handle enter key in chat input
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
   };
   
   // Auto-scroll to bottom of messages
@@ -275,244 +265,191 @@ const handleUpload = async () => {
     scrollToBottom();
   }, [messages]);
 
-  // Simple alternative streaming implementation that fallbacks to polling if needed
-  const handleStreamFallback = useCallback(async (userMessageId, currentInput) => {
-    console.log('Using fallback streaming method');
+  // Handle RAG evaluation
+  const handleEvaluateRAG = async () => {
+    if (!uploadResult) {
+      setEvaluationError('Please upload a document first');
+      return;
+    }
     
-    // Create initial assistant message
-    const assistantMessageId = uuidv4();
-    const initialAssistantMessage = {
-      id: assistantMessageId,
-      role: 'assistant',
-      content: '',
-      isStreaming: true,
-      timestamp: new Date().toISOString()
-    };
-    
-    // Add initial assistant message
-    setMessages(prev => [...prev.filter(msg => !msg.isThinking), initialAssistantMessage]);
-    setCurrentStream(assistantMessageId);
-    
-    // Notify parent that streaming has started
-    onStreamingStateChange(true);
+    setEvaluating(true);
+    setEvaluationError(null);
     
     try {
-      console.log('Sending query to backend with document:', uploadResult.filename);
-      
-      // Start with POST request to initialize the response
-      const response = await axios.post(`${getBackendURL()}/query-sync`, {
-        query: currentInput,
-        document: uploadResult.filename,
-        ...advancedOptions
-      });
-      
-      console.log('Got response from backend:', response.data);
-      
-      // Use polling to simulate streaming
-      let fullResponse = '';
-      const wordCount = currentInput.split(' ').length;
-      const estimatedTokenCount = Math.max(20, wordCount * 3); // Rough estimate
-      const tokenDelay = 50; // ms between tokens
-      
-      if (response.data && response.data.response) {
-        // Get the full response
-        fullResponse = response.data.response;
-        
-        // Simulate streaming by revealing one token at a time
-        let accumulatedText = '';
-        const chunks = fullResponse.split(' ');
-        
-        for (let i = 0; i < chunks.length; i++) {
-          accumulatedText += (i > 0 ? ' ' : '') + chunks[i];
-          
-          // Update message with new token
-          setMessages(prevMessages => {
-            return prevMessages.map(msg => {
-              if (msg.id === assistantMessageId) {
-                return { ...msg, content: accumulatedText };
-              }
-              return msg;
-            });
-          });
-          
-          // Wait for next token
-          if (i < chunks.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, tokenDelay));
-          }
-        }
-      }
-      
-      // Final update with complete response
-      setMessages(prevMessages => {
-        return prevMessages.map(msg => {
-          if (msg.id === assistantMessageId) {
-            return { 
-              ...msg, 
-              content: fullResponse || 'Sorry, I couldn\'t generate a response.',
-              isStreaming: false,
-              sources: response.data.sources || []
-            };
-          }
-          return msg;
-        });
-      });
-      
-      setCurrentStream(null);
-      setLoading(false);
-      onStreamingStateChange(false);
-      
-    } catch (error) {
-      console.error('Error in fallback streaming:', error);
-      
-      // Add error message
-      setMessages(prev => {
-        // Remove the assistant message
-        const filteredMessages = prev.filter(msg => msg.id !== assistantMessageId);
-        
-        // Add error message
-        const errorMessage = {
+      // Add system message
+      setMessages(prev => [
+        ...prev,
+        {
           id: uuidv4(),
           role: 'system',
-          content: 'Failed to process your request. Please try again.',
+          content: `Starting RAG evaluation for "${uploadResult.filename}"...`,
+          timestamp: new Date().toISOString()
+        }
+      ]);
+      
+      // Instead of checking for existing datasets, directly create one
+      try {
+        // Create a new evaluation dataset using your /evaluate/basic endpoint
+        const response = await axios.post(`${getBackendURL()}/evaluate/basic`, {
+          document: uploadResult.filename,
+          query: "What is the main topic of this document?" // Sample query for evaluation
+        });
+        
+        if (response.data && response.data.evaluation) {
+          // Add success message with results
+          setMessages(prev => [
+            ...prev,
+            {
+              id: uuidv4(),
+              role: 'system',
+              content: `Evaluation complete! Original RAG and LlamaIndex RAG have been compared on a sample query.`,
+              timestamp: new Date().toISOString()
+            }
+          ]);
+          
+          // You can optionally add specific result details
+          const evalResult = response.data.evaluation;
+          setMessages(prev => [
+            ...prev,
+            {
+              id: uuidv4(),
+              role: 'system',
+              content: `Results:\n\nOriginal RAG: "${evalResult.original.response.slice(0, 150)}..."\n\nLlamaIndex RAG: "${evalResult.llama_index.response.slice(0, 150)}..."`,
+              timestamp: new Date().toISOString()
+            }
+          ]);
+        }
+      } catch (err) {
+        console.error('Error running basic evaluation:', err);
+        throw new Error('Failed to evaluate RAG systems');
+      }
+    } catch (err) {
+      console.error('Error initiating evaluation:', err);
+      setEvaluationError('Failed to start evaluation. Check console for details.');
+      
+      // Add error message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: uuidv4(),
+          role: 'system',
+          content: `Error running evaluation: ${err.response?.data?.detail || err.message || 'Unknown error'}`,
           isError: true,
           timestamp: new Date().toISOString()
-        };
-        
-        return [...filteredMessages, errorMessage];
-      });
-      
-      setLoading(false);
-      setCurrentStream(null);
-      onStreamingStateChange(false);
-      onError('Fallback streaming error: ' + error.message);
+        }
+      ]);
+    } finally {
+      setEvaluating(false);
     }
-  }, [advancedOptions, getBackendURL, onError, onStreamingStateChange, uploadResult]);
+  };
 
-  // Submit query to server
-// Submit query to server - fixed version with better error handling
-const handleSubmit = useCallback(async () => {
-  // Add detailed logging to help troubleshoot issues
-  console.log('Submit attempt with state:', {
-    inputEmpty: !input.trim(),
-    loading,
-    uploadResult: uploadResult ? 'Yes ('+uploadResult.filename+')' : 'No',
-    connected,
-    messagesCount: messages.length
-  });
-
-  if (!input.trim() || loading || !uploadResult || !connected) {
-    console.log('Submit blocked due to:', {
-      emptyInput: !input.trim(),
-      loading,
-      noUploadResult: !uploadResult,
-      notConnected: !connected
-    });
-    return;
-  }
-  
-  try {
+  // Simplified submit handler
+  const handleSubmit = async () => {
+    if (!input.trim() || loading || !uploadResult || !connected) {
+      return;
+    }
+    
     // Store current input and clear it
     const currentInput = input.trim();
-    console.log('Submitting query:', currentInput);
-    console.log('For document:', uploadResult.filename);
-    
-    // Clear input immediately for better UX
     setInput('');
+    setLoading(true);
     
-    // Cancel any existing stream
-    if (eventSourceRef.current) {
-      console.log('Closing existing EventSource');
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-      setCurrentStream(null);
-    }
-    
-    // Add user message to the conversation
-    const userMessageId = uuidv4();
+    // Add user message
     const userMessage = {
-      id: userMessageId,
+      id: uuidv4(),
       role: 'user',
       content: currentInput,
       timestamp: new Date().toISOString()
     };
     
-    // Update messages state with the user message
-    setMessages(prev => [...prev, userMessage]);
-    setLoading(true);
-    
-    // Create a temporary thinking message
-    const thinkingMessageId = uuidv4();
+    // Add thinking message
     const thinkingMessage = {
-      id: thinkingMessageId,
+      id: uuidv4(),
       role: 'assistant',
       content: 'Thinking...',
       isThinking: true,
-      isStreaming: true,
       timestamp: new Date().toISOString()
     };
     
-    // Add thinking message
-    setMessages(prev => [...prev, thinkingMessage]);
+    setMessages(prev => [...prev, userMessage, thinkingMessage]);
     
     try {
-      // Make sure document is set on backend
-      await axios.post(`${getBackendURL()}/set_document`, { 
-        document: uploadResult.filename 
-      }).catch(e => console.warn('Set document warning:', e));
+      // Try to set document
+      try {
+        await axios.post(`${getBackendURL()}/set_document`, { 
+          document: uploadResult.filename 
+        });
+      } catch (err) {
+        // Ignore errors
+      }
       
-      // Use sync endpoint for better reliability
-      console.log('Sending query to backend...');
+      // Send query - simplified options
       const response = await axios.post(`${getBackendURL()}/query-sync`, {
         query: currentInput,
         document: uploadResult.filename,
-        ...advancedOptions
+        model: advancedOptions.model,
+        temperature: advancedOptions.temperature,
+        context_window: advancedOptions.context_window,
+        quantization: advancedOptions.quantization,
+        use_advanced_rag: advancedOptions.use_advanced_rag,
+        use_llama_index: advancedOptions.use_llama_index
+      }, {
+        timeout: 30000000 // 30 second timeout
       });
       
-      console.log('Response received:', response.data);
-      
       // Remove thinking message
-      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
+      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessage.id));
       
-      if (!response.data || !response.data.response) {
+      if (!response.data) {
         throw new Error('Invalid response from server');
       }
       
-      // Add assistant response message
+      // Format and add assistant response
+      const formattedResponse = formatResponseForDisplay(
+        response.data.response, 
+        response.data.sources
+      );
+      
       const assistantMessage = {
         id: uuidv4(),
         role: 'assistant',
-        content: response.data.response,
-        sources: response.data.sources || [],
+        content: formattedResponse,
+        rawSources: response.data.sources || [],
+        system: response.data.system || 'default',
         timestamp: new Date().toISOString()
       };
       
       setMessages(prev => [...prev.filter(msg => !msg.isThinking), assistantMessage]);
-      scrollToBottom();
       
     } catch (error) {
       console.error('Query error:', error);
       
       // Remove thinking message
-      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
+      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessage.id));
       
-      // Add error message
+      // Add simple error message
       const errorMessage = {
         id: uuidv4(),
         role: 'system',
-        content: `Error: ${error.message || 'Failed to get response from server'}. Please try again.`,
+        content: "I couldn't process your question. Please try again with a simpler query.",
         isError: true,
         timestamp: new Date().toISOString()
       };
       
       setMessages(prev => [...prev.filter(msg => !msg.isThinking), errorMessage]);
+      onError(error.message || 'Unknown error');
     } finally {
       setLoading(false);
     }
-  } catch (error) {
-    console.error('Unexpected error during submit:', error);
-    setLoading(false);
-  }
-}, [input, loading, uploadResult, connected, advancedOptions, getBackendURL, scrollToBottom]);
+  };
+  
+  // Handle enter key in chat input
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
   
   // Connection status indicator
   const ConnectionStatus = () => (
@@ -539,60 +476,14 @@ const handleSubmit = useCallback(async () => {
         boxShadow: connected ? '0 0 5px #10b981' : 'none',
         animation: connected ? 'none' : 'pulse 1.5s infinite'
       }}></div>
-      {connected ? 'Connected to Server' : 'Disconnected'}
+      {connected ? 'Connected' : 'Disconnected'}
     </div>
   );
-  
-  // Streaming indicator component
-  const StreamingIndicator = () => (
-    <div className="typing-indicator">
-      <span></span><span></span><span></span>
-    </div>
-  );
-  
-  // Debugging component - toggle with key press
-  const [showDebug, setShowDebug] = useState(false);
-  useEffect(() => {
-    const toggleDebug = (e) => {
-      if (e.ctrlKey && e.key === 'd') {
-        setShowDebug(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', toggleDebug);
-    return () => window.removeEventListener('keydown', toggleDebug);
-  }, []);
   
   return (
     <div style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '24px' }}>MCP Document Chat</h1>
+      <h1 style={{ marginBottom: '24px' }}>Document Chat</h1>
       <ConnectionStatus />
-      
-      {/* Debug info panel - hidden by default, toggle with Ctrl+D */}
-      {showDebug && (
-        <div style={{
-          position: 'fixed',
-          bottom: 10,
-          right: 10,
-          width: 300,
-          maxHeight: 400,
-          overflowY: 'auto',
-          backgroundColor: 'rgba(0,0,0,0.8)',
-          color: 'white',
-          padding: 10,
-          fontFamily: 'monospace',
-          fontSize: 12,
-          zIndex: 1000,
-          borderRadius: 4
-        }}>
-          <div>Connected: {connected ? 'Yes' : 'No'}</div>
-          <div>Upload Result: {uploadResult ? 'Yes' : 'No'}</div>
-          <div>Doc: {uploadResult?.filename || 'None'}</div>
-          <div>Messages: {messages.length}</div>
-          <div>Loading: {loading ? 'Yes' : 'No'}</div>
-          <div>Streaming: {currentStream ? 'Yes' : 'No'}</div>
-          <button onClick={() => console.log({messages, uploadResult})}>Log State</button>
-        </div>
-      )}
       
       <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '24px' }}>
         {/* Left sidebar */}
@@ -607,6 +498,95 @@ const handleSubmit = useCallback(async () => {
           }}>
             <h2 style={{ fontSize: '18px', marginBottom: '16px' }}>Upload Document</h2>
             
+            {/* Model Settings */}
+            <div style={{ marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>Model Settings</h3>
+              <div style={{
+                backgroundColor: '#f8fafc',
+                padding: '12px',
+                borderRadius: '4px',
+                fontSize: '13px'
+              }}>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '4px' }}>Model:</label>
+                  <select
+                    name="model"
+                    value={advancedOptions.model}
+                    onChange={handleOptionChange}
+                    style={{
+                      width: '100%',
+                      padding: '6px',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1'
+                    }}
+                  >
+                    {availableModels.map(model => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', marginBottom: '4px' }}>
+                    Temperature: {advancedOptions.temperature}
+                  </label>
+                  <input
+                    type="range"
+                    name="temperature"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={advancedOptions.temperature}
+                    onChange={handleOptionChange}
+                    style={{ width: '100%' }}
+                  />
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                    Lower = more factual, Higher = more creative
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    cursor: 'pointer'
+                  }}>
+                    <input
+                      type="checkbox"
+                      name="use_llama_index"
+                      checked={advancedOptions.use_llama_index}
+                      onChange={handleOptionChange}
+                    />
+                    Use LlamaIndex RAG
+                  </label>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                    Enable advanced LlamaIndex RAG for better retrieval
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    cursor: 'pointer'
+                  }}>
+                    <input
+                      type="checkbox"
+                      name="use_advanced_rag"
+                      checked={advancedOptions.use_advanced_rag}
+                      onChange={handleOptionChange}
+                    />
+                    Use Advanced RAG
+                  </label>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                    Enable advanced retrieval for better context understanding
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div 
               style={{ 
                 border: '2px dashed #cbd5e1',
@@ -703,7 +683,8 @@ const handleSubmit = useCallback(async () => {
               borderRadius: '8px',
               padding: '20px',
               boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-              borderLeft: '4px solid #10b981'
+              borderLeft: '4px solid #10b981',
+              marginBottom: '24px'
             }}>
               <h2 style={{ fontSize: '18px', color: '#10b981', marginBottom: '16px' }}>Document Details</h2>
               
@@ -732,199 +713,79 @@ const handleSubmit = useCallback(async () => {
                   </details>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* RAG Evaluation Button */}
+          {uploadResult && (
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              padding: '20px',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+              borderLeft: '4px solid #8b5cf6',
+              marginBottom: '24px'
+            }}>
+              <h2 style={{ fontSize: '18px', color: '#8b5cf6', marginBottom: '16px' }}>RAG Evaluation</h2>
               
-              {/* Server features */}
-              {serverInfo && (
-                <div style={{ marginTop: '16px' }}>
-                  <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>Server Features</h3>
-                  <div style={{
-                    backgroundColor: '#f8fafc',
-                    padding: '12px',
-                    borderRadius: '4px',
-                    fontSize: '13px'
-                  }}>
-                    {serverInfo.features.map((feature, idx) => (
-                      <div key={feature.id} style={{ 
-                        display: 'flex', 
-                        alignItems: 'center',
-                        padding: '4px 0',
-                        borderBottom: idx < serverInfo.features.length - 1 ? '1px solid #e2e8f0' : 'none'
-                      }}>
-                        <div style={{
-                          width: '10px',
-                          height: '10px',
-                          borderRadius: '50%',
-                          backgroundColor: feature.enabled ? '#10b981' : '#94a3b8',
-                          marginRight: '8px'
-                        }}></div>
-                        <span>{feature.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div style={{
+                backgroundColor: '#f8fafc',
+                padding: '16px',
+                borderRadius: '4px',
+                fontSize: '14px',
+                marginBottom: '16px'
+              }}>
+                <p>Evaluate and compare the performance of different RAG systems on this document.</p>
+              </div>
               
-              {/* Advanced options toggle */}
-              <button
-                onClick={() => setShowOptions(!showOptions)}
-                style={{
-                  backgroundColor: showOptions ? '#4f46e5' : 'transparent',
-                  color: showOptions ? 'white' : '#64748b',
-                  border: '1px solid ' + (showOptions ? '#4f46e5' : '#cbd5e1'),
-                  borderRadius: '4px',
-                  padding: '8px 0',
-                  marginTop: '16px',
-                  width: '100%',
-                  fontSize: '14px',
-                  cursor: 'pointer'
-                }}
-              >
-                {showOptions ? 'Hide Advanced Options' : 'Show Advanced Options'}
-              </button>
-              
-              {/* Advanced options */}
-              {showOptions && (
+              {evaluationError && (
                 <div style={{
-                  marginTop: '16px',
-                  backgroundColor: '#f8fafc',
-                  padding: '16px',
+                  backgroundColor: '#fee2e2',
+                  color: '#ef4444',
+                  padding: '10px',
                   borderRadius: '4px',
+                  marginBottom: '16px',
                   fontSize: '14px'
                 }}>
-                  <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>Query Options</h3>
-                  
-                  <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
-                      <input
-                        type="checkbox"
-                        name="use_advanced_rag"
-                        checked={advancedOptions.use_advanced_rag}
-                        onChange={handleAdvancedOptionChange}
-                        style={{ marginRight: '8px' }}
-                      />
-                      Use Advanced RAG
-                    </label>
-                    
-                    <label style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
-                      <input
-                        type="checkbox"
-                        name="use_cot"
-                        checked={advancedOptions.use_cot}
-                        onChange={handleAdvancedOptionChange}
-                        style={{ marginRight: '8px' }}
-                      />
-                      Chain of Thought
-                    </label>
-                    
-                    <label style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
-                      <input
-                        type="checkbox"
-                        name="use_kg"
-                        checked={advancedOptions.use_kg}
-                        onChange={handleAdvancedOptionChange}
-                        style={{ marginRight: '8px' }}
-                      />
-                      Knowledge Graph
-                    </label>
-                    
-                    <label style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
-                      <input
-                        type="checkbox"
-                        name="verify_answers"
-                        checked={advancedOptions.verify_answers}
-                        onChange={handleAdvancedOptionChange}
-                        style={{ marginRight: '8px' }}
-                      />
-                      Verify Answers
-                    </label>
-                    
-                    <label style={{ display: 'flex', alignItems: 'center' }}>
-                      <input
-                        type="checkbox"
-                        name="use_multihop"
-                        checked={advancedOptions.use_multihop}
-                        onChange={handleAdvancedOptionChange}
-                        style={{ marginRight: '8px' }}
-                      />
-                      Multi-hop Reasoning
-                    </label>
-                  </div>
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', marginBottom: '4px' }}>Model:</label>
-                    <select
-                      name="model"
-                      value={advancedOptions.model}
-                      onChange={handleAdvancedOptionChange}
-                      style={{
-                        width: '100%',
-                        padding: '6px',
-                        borderRadius: '4px',
-                        border: '1px solid #cbd5e1'
-                      }}
-                    >
-                      {availableModels.map(model => (
-                        <option key={model} value={model}>{model}</option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', marginBottom: '4px' }}>
-                      Temperature: {advancedOptions.temperature}
-                    </label>
-                    <input
-                      type="range"
-                      name="temperature"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={advancedOptions.temperature}
-                      onChange={handleAdvancedOptionChange}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                  
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', marginBottom: '4px' }}>Context Window:</label>
-                    <select
-                      name="context_window"
-                      value={advancedOptions.context_window}
-                      onChange={handleAdvancedOptionChange}
-                      style={{
-                        width: '100%',
-                        padding: '6px',
-                        borderRadius: '4px',
-                        border: '1px solid #cbd5e1'
-                      }}
-                    >
-                      <option value="5">5 chunks</option>
-                      <option value="10">10 chunks</option>
-                      <option value="15">15 chunks</option>
-                      <option value="20">20 chunks</option>
-                    </select>
-                  </div>
-                  
-                  <div style={{ marginTop: '12px' }}>
-                    <label style={{ display: 'block', marginBottom: '4px' }}>Quantization:</label>
-                    <select
-                      name="quantization"
-                      value={advancedOptions.quantization}
-                      onChange={handleAdvancedOptionChange}
-                      style={{
-                        width: '100%',
-                        padding: '6px',
-                        borderRadius: '4px',
-                        border: '1px solid #cbd5e1'
-                      }}
-                    >
-                      <option value="None">None (Full Precision)</option>
-                      <option value="8bit">8-bit Quantization</option>
-                      <option value="4bit">4-bit Quantization</option>
-                      <option value="1bit">1-bit Quantization</option>
-                    </select>
-                  </div>
+                  {evaluationError}
                 </div>
               )}
+              
+              <button
+                onClick={handleEvaluateRAG}
+                disabled={evaluating || !connected || !uploadResult}
+                style={{
+                  backgroundColor: evaluating || !connected || !uploadResult ? '#94a3b8' : '#8b5cf6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  padding: '10px 0',
+                  width: '100%',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: evaluating || !connected || !uploadResult ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                {evaluating ? (
+                  <>
+                    <div style={{ 
+                      width: '16px', 
+                      height: '16px', 
+                      borderRadius: '50%', 
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      borderTopColor: 'white',
+                      animation: 'spin 1s linear infinite' 
+                    }}></div>
+                    Evaluating...
+                  </>
+                ) : (
+                  <>📊 Evaluate RAG Systems</>
+                )}
+              </button>
             </div>
           )}
         </div>
@@ -1024,9 +885,9 @@ const handleSubmit = useCallback(async () => {
                     color: message.role === 'user' ? 'white' : 
                           message.role === 'system' ? (message.isError ? '#ef4444' : '#1e293b') : '#1e293b',
                     boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-                    borderLeft: message.isStreaming ? '3px solid #3b82f6' : 
-                               message.role === 'system' ? '3px solid #64748b' : 'none',
-                    transition: 'border-left-color 0.3s ease',
+                    borderLeft: message.isThinking ? '3px solid #f97316' : 
+                               message.role === 'system' ? '3px solid #64748b' : 
+                               message.system === 'llama_index' ? '3px solid #8b5cf6' : 'none',
                     border: message.role === 'system' ? '1px solid #e2e8f0' : 'none'
                   }}
                 >
@@ -1035,76 +896,9 @@ const handleSubmit = useCallback(async () => {
                       fontSize: '14px', 
                       whiteSpace: 'pre-wrap',
                     }}
-                    className={message.isStreaming ? 'streaming-message' : ''}
                   >
                     {message.content}
-                    {message.isStreaming && (
-                      <StreamingIndicator />
-                    )}
                   </div>
-                  
-                  {/* Display sources if available */}
-                  {message.sources && message.sources.length > 0 && (
-                    <div style={{ 
-                      marginTop: '8px',
-                      fontSize: '12px',
-                      padding: '8px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.05)',
-                      borderRadius: '4px'
-                    }}>
-                      <strong>Sources:</strong>
-                      <ul style={{ 
-                        margin: '4px 0 0 0', 
-                        paddingLeft: '16px',
-                        color: '#475569'
-                      }}>
-                        {message.sources.map((source, idx) => (
-                          <li key={idx}>{source}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  
-                  {/* Display reasoning if available */}
-                  {message.reasoning && (
-                    <details style={{ marginTop: '8px', fontSize: '12px' }}>
-                      <summary style={{ cursor: 'pointer', color: '#4f46e5' }}>View reasoning</summary>
-                      <div style={{ 
-                        marginTop: '8px',
-                        padding: '8px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.05)',
-                        borderRadius: '4px',
-                        whiteSpace: 'pre-wrap'
-                      }}>
-                        {message.reasoning}
-                      </div>
-                    </details>
-                  )}
-                  
-                  {/* Display verification if available */}
-                  {message.verification && (
-                    <details style={{ marginTop: '8px', fontSize: '12px' }}>
-                      <summary style={{ cursor: 'pointer', color: '#4f46e5' }}>View verification</summary>
-                      <div style={{ 
-                        marginTop: '8px',
-                        padding: '8px',
-                        backgroundColor: 'rgba(0, 0, 0, 0.05)',
-                        borderRadius: '4px'
-                      }}>
-                        <p><strong>Verified:</strong> {message.verification.is_verified ? 'Yes' : 'No'}</p>
-                        {message.verification.unsupported_claims && message.verification.unsupported_claims.length > 0 && (
-                          <>
-                            <p><strong>Unsupported Claims:</strong></p>
-                            <ul style={{ paddingLeft: '16px' }}>
-                              {message.verification.unsupported_claims.map((claim, idx) => (
-                                <li key={idx}>{claim}</li>
-                              ))}
-                            </ul>
-                          </>
-                        )}
-                      </div>
-                    </details>
-                  )}
                   
                   {/* Display metadata */}
                   <div style={{ 
@@ -1115,15 +909,18 @@ const handleSubmit = useCallback(async () => {
                     display: 'flex',
                     justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
                     alignItems: 'center',
-                    gap: '8px'
+                    gap: '6px'
                   }}>
-                    {message.retrieval_time && (
-                      <span>Retrieval: {typeof message.retrieval_time === 'number' ? message.retrieval_time.toFixed(2) : message.retrieval_time}s</span>
-                    )}
-                    {message.confidence && (
-                      <span>Confidence: {Math.round(message.confidence * 100)}%</span>
-                    )}
                     <span>{new Date(message.timestamp).toLocaleTimeString()}</span>
+                    {message.system === 'llama_index' && (
+                      <span style={{ 
+                        backgroundColor: '#8b5cf6',
+                        color: 'white',
+                        fontSize: '9px',
+                        padding: '2px 4px',
+                        borderRadius: '4px'
+                      }}>LlamaIndex</span>
+                    )}
                   </div>
                 </div>
               ))
@@ -1133,6 +930,38 @@ const handleSubmit = useCallback(async () => {
             <div ref={messagesEndRef} />
           </div>
           
+          {/* Suggested questions */}
+          {suggestedQuestions.length > 0 && (
+            <div style={{ 
+              padding: '12px 16px',
+              borderTop: '1px solid #e2e8f0',
+              backgroundColor: '#f8fafc',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px'
+            }}>
+              {suggestedQuestions.map((question, idx) => (
+                <button 
+                  key={idx}
+                  onClick={() => setInput(question)}
+                  style={{
+                    fontSize: '12px',
+                    padding: '6px 12px',
+                    borderRadius: '16px',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#f1f5f9',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s ease'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#e2e8f0'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          )}
+          
           {/* Input area */}
           <div style={{ 
             padding: '16px',
@@ -1141,6 +970,7 @@ const handleSubmit = useCallback(async () => {
             display: 'flex',
             gap: '8px'
           }}>
+            
             <textarea
               value={input}
               onChange={handleInputChange}
@@ -1161,6 +991,7 @@ const handleSubmit = useCallback(async () => {
               }}
               rows={1}
             />
+            
             <button
               onClick={handleSubmit}
               disabled={!connected || !uploadResult || !input.trim() || loading}
@@ -1177,7 +1008,7 @@ const handleSubmit = useCallback(async () => {
                 justifyContent: 'center'
               }}
             >
-              Send
+              {loading ? 'Thinking...' : 'Send'}
             </button>
           </div>
         </div>
@@ -1200,48 +1031,13 @@ const handleSubmit = useCallback(async () => {
           }
         }
         
-        .typing-indicator {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          margin-left: 8px;
-          height: 16px;
-          vertical-align: middle;
-        }
-        
-        .typing-indicator span {
-          width: 6px;
-          height: 6px;
-          background-color: #3b82f6;
-          border-radius: 50%;
-          display: inline-block;
-          animation: bounce 1.4s infinite ease-in-out both;
-        }
-        
-        .typing-indicator span:nth-child(1) {
-          animation-delay: -0.32s;
-        }
-        
-        .typing-indicator span:nth-child(2) {
-          animation-delay: -0.16s;
-        }
-        
-        @keyframes bounce {
-          0%, 80%, 100% { 
-            transform: scale(0);
-          } 40% { 
-            transform: scale(1.0);
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
           }
-        }
-        
-        /* Add a subtle blinking cursor animation for streaming messages */
-        @keyframes blink-cursor {
-          0%, 100% { border-left-color: transparent; }
-          50% { border-left-color: #3b82f6; }
-        }
-        
-        .streaming-message {
-          animation: blink-cursor 1s step-end infinite;
+          100% {
+            transform: rotate(360deg);
+          }
         }
       `}</style>
     </div>

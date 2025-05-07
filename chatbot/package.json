@@ -1,61 +1,63 @@
 {
-  "name": "local-chatbot-app",
+  "name": "document-chat-app",
   "version": "1.0.0",
-  "description": "A chatbot application with ML backend",
-  "author": "Navid Mirnouti <navid72m@gmail.com>",
-  "main": "electron/main.js",
-  "build": {
-    "asar": true,
-    "asarUnpack": [
-      "bin/**",
-      "ollama_models/**",
-      "models/**"
-    ],
-    "appId": "com.yourcompany.chatbot",
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "!**/node_modules/**/*",
-      "!**/.venv",
-      "!**/venv",
-      "!**/*.pyc",
-      "!**/*.pyo",
-      "!**/__pycache__/**",
-      "!**/miniconda3/**",
-      "!**/chatbot-env/**",
-      "!backend/**",
-      "!**/config",
-      "!**/site-packages/**"
-    ],
-    "directories": {
-      "buildResources": "build"
-    },
-    "mac": {
-      "category": "public.app-category.productivity",
-      "target": "dmg",
-      "extraFiles": [
-        {
-          "from": "electron/bin/backend",
-          "to": "bin/backend"
-        }
-      ]
-    },
-    "npmRebuild": false,
-    "buildDependenciesFromSource": false
-  },
+  "description": "Document chat application with local LLM support",
+  "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
-    "dev": "cd frontend && npm run dev",
+    "start": "electron .",
+    "dev": "concurrently \"cd frontend && npm start\" \"cross-env NODE_ENV=development electron .\"",
     "build:frontend": "cd frontend && npm run build",
-    "electron:dev": "electron .",
-    "electron:build": "npm run build:frontend && electron-builder build --publish never",
+    "build": "npm run build:frontend && electron-builder",
     "pack": "electron-builder --dir",
     "dist": "electron-builder"
   },
-  "devDependencies": {
-    "electron": "^35.1.1",
-    "electron-builder": "^26.0.12"
-  },
   "dependencies": {
-    "axios": "^1.8.4"
+    "electron-log": "^5.0.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "build": {
+    "appId": "com.yourdomain.documentchat",
+    "productName": "Document Chat",
+    "files": [
+      "electron/**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*/{.babelrc,.eslintrc,.eslintrc.json}"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "directories": {
+      "buildResources": "resources",
+      "output": "build"
+    },
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office"
+    }
   }
 }
