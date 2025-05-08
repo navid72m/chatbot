@@ -2,7 +2,15 @@
 
 A powerful document analysis and chat application with advanced OCR and RAG (Retrieval-Augmented Generation) capabilities for natural language interaction with your documents.
 
-![Document Chat](https://via.placeholder.com/800x400?text=Document+Chat)
+## Demo
+
+## Demo
+
+[![Document Chat Demo]](https://youtu.be/cIJL3SNN4R4)
+
+*Click on the image above to watch the demo video*
+
+
 
 ## Features
 
