@@ -1,167 +1,190 @@
-# Advanced RAG Document Chatbot
+# Document Chat
 
-A sophisticated document chatbot system implementing advanced Retrieval-Augmented Generation (RAG) techniques to enable more accurate, context-aware conversations with your documents.
+A powerful document analysis and chat application with advanced OCR and RAG (Retrieval-Augmented Generation) capabilities for natural language interaction with your documents.
 
+![Document Chat](https://via.placeholder.com/800x400?text=Document+Chat)
 
+## Features
 
-## 🌟 Features
+- **Universal Document Support**: Process PDFs, Word documents, text files, CSV, and images (JPG, PNG, etc.)
+- **Advanced OCR**: Extract text from images and scanned documents using PaddleOCR
+- **Vector Search**: Find relevant document sections based on semantic meaning, not just keywords
+- **Conversational Interface**: Ask questions about your documents in natural language
+- **Multi-RAG Support**: Choose between different RAG implementations:
+  - Default RAG for basic document retrieval
+  - LlamaIndex RAG for advanced context-aware responses
+- **Local Processing**: All processing happens on your device - no data is sent to external servers
+- **Customizable Models**: Select from different language models and performance settings
 
-### Core RAG Capabilities
-- **Document Processing**: Upload and process various document formats (PDF, TXT, images with OCR)
-- **Vector Search**: Semantic search using sentence transformers and ChromaDB
-- **Hybrid Retrieval**: Combines vector search with knowledge graph for better document recall
-- **Context-aware Responses**: High-quality answers grounded in retrieved document context
-
-### Advanced RAG Techniques
-- **Knowledge Graphs**: Automatically extracts entities and relationships from documents using Neo4j
-- **Chain-of-Thought Reasoning**: Implements explicit reasoning steps before answering
-- **Multi-hop Reasoning**: Breaks complex queries into simpler sub-questions
-- **Answer Verification**: Verifies factual accuracy against source documents
-- **Quantization Support**: Run LLMs with different precision levels (4-bit, 8-bit)
-
-### User Experience
-- **Interactive UI**: Clean, responsive React-based interface
-- **Real-time Chat**: Smooth conversational experience with typing indicators
-- **Source Attribution**: Transparently shows document sources for answers
-- **Advanced Query Options**: User-configurable RAG parameters
-
-## 🚀 Getting Started
+## Installation
 
 ### Prerequisites
-- Python 3.8+
-- Node.js 14+
-- Neo4j (optional, for knowledge graph features)
-- Ollama (for running LLMs locally)
 
-### Backend Setup
+- Python 3.8 or higher
+- pip (Python package manager)
+- 4GB+ RAM recommended
+- GPU support is optional but recommended for faster processing
+
+### Setup
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/advanced-rag-chatbot.git
-   cd advanced-rag-chatbot
+   git clone https://github.com/yourusername/document-chat.git
+   cd document-chat
    ```
 
-2. Set up the Python backend:
+2. Create a virtual environment:
    ```bash
-   cd chatbot/backend
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. Install required packages:
+   ```bash
    pip install -r requirements.txt
    ```
 
-3. (Optional) Set up Neo4j for knowledge graph features:
+4. Install OCR dependencies (optional but recommended):
    ```bash
-   # Using Docker
-   docker run -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j
+   # For OCR support
+   pip install paddleocr paddlepaddle pillow
+   
+   # For GPU acceleration (if you have a CUDA-compatible GPU)
+   pip install paddlepaddle-gpu
    ```
 
-4. Download spaCy language model:
+## Configuration
+
+Document Chat can be configured through the `config.json` file or through the application interface.
+
+### Model Settings
+
+- **Model**: Choose from available language models
+- **Quantization**: Select quantization level (None, 8-bit, 4-bit, 1-bit)
+- **Context Window**: Number of document chunks to include in context (higher = more comprehensive but slower)
+- **Temperature**: Control response creativity (lower = more factual, higher = more creative)
+
+### OCR Settings
+
+- **Language**: Primary language for OCR (default: 'en')
+- **Use Angle Detection**: Enable text orientation detection (default: True)
+- **GPU Acceleration**: Enable GPU support for OCR if available
+
+## Usage
+
+### Starting the Application
+
+1. Start the backend server:
    ```bash
-   python -m spacy download en_core_web_md
+   cd chatbot/backend
+   python app_integration_updated.py
    ```
 
-5. Install Ollama and download models:
-   ```bash
-   # Follow instructions at https://ollama.ai to install Ollama
-   ollama pull mistral
-   # Or other models like llama3, phi, etc.
-   ```
-
-6. Start the backend server:
-   ```bash
-   python app_integration.py
-   ```
-
-### Frontend Setup
-
-1. Set up the React frontend:
+2. Start the frontend (in a new terminal):
    ```bash
    cd chatbot/frontend
-   npm install
+   npm install  # First time only
    npm start
    ```
 
-2. Open your browser and navigate to:
+3. Open your browser and navigate to:
    ```
    http://localhost:3000
    ```
 
-## 🛠️ Architecture
+### Working with Documents
 
-The system consists of several key components:
+1. **Upload Documents**:
+   - Click the upload area or drag-and-drop a document
+   - Supported formats: PDF, DOCX, TXT, CSV, JPG, PNG, etc.
 
-### 1. Document Processing Pipeline
-- PDF text extraction with fallback to OCR
-- Image OCR using Tesseract
-- Document chunking for vector storage
+2. **Ask Questions**:
+   - Type your question in the chat input
+   - The system will search the document and provide relevant answers
 
-### 2. Retrieval System
-- **Vector Store**: Implements semantic similarity search using sentence transformers
-- **Knowledge Graph**: Extracts entities and relationships with spaCy and stores them in Neo4j
-- **Hybrid Retriever**: Combines both approaches for more comprehensive document retrieval
+3. **Advanced Options**:
+   - Adjust model settings for different response types
+   - Choose RAG method for different retrieval strategies
+   - Evaluate RAG performance on your documents
 
-### 3. Reasoning Layer
-- **Chain-of-Thought Reasoner**: Implements explicit reasoning steps
-- **Multi-hop Reasoning**: Breaks down complex queries into simpler sub-questions
-- **Answer Verification**: Checks answer accuracy against source documents
+## OCR Capabilities
 
-### 4. LLM Integration
-- Uses Ollama for local model inference
-- Supports Mistral, Llama3, and other models
-- Configurable parameters (temperature, context window)
-- Quantization options for better performance
+Document Chat uses PaddleOCR for extracting text from images with these features:
 
+- Multi-language support
+- Text orientation detection
+- High-accuracy recognition
+- GPU acceleration when available
 
+### Supported Image Formats
 
-## 🔧 Configuration Options
+- JPEG/JPG
+- PNG
+- BMP
+- TIFF
+- WebP
 
-The system can be configured through various parameters:
+## Troubleshooting
 
-```python
-# Example configuration
-advanced_rag = AdvancedRAG(
-    vector_store=vector_store,
-    knowledge_graph=knowledge_graph,
-    reasoner=reasoner,
-    model="mistral",  # or llama3, phi, etc.
-    temperature=0.7
-)
+### Vector Database Issues
 
-# Enable/disable components
-advanced_rag.use_cot = True      # Chain of Thought
-advanced_rag.use_kg = True       # Knowledge Graph
-advanced_rag.verify_answers = True
-advanced_rag.use_multihop = True
+If you experience issues with the vector database, you may need to reset it:
+
+```bash
+# Delete the vector database directory
+rm -rf ~/Library/Application\ Support/Document\ Chat/
 ```
 
-## 🧩 Components
+Or use the provided script:
 
-### Backend Components
+```bash
+python scripts/delete_vector_db.py
+```
 
-- `advanced_rag.py`: Main implementation of the Advanced RAG system
-- `knowledge_graph.py`: Neo4j integration for entity extraction and relationship mapping
-- `chain_of_thought.py`: Implementation of reasoning steps
-- `vector_store.py`: ChromaDB integration for vector search
-- `hybrid_retriever.py`: Implementation of hybrid retrieval strategies
-- `app_integration.py`: FastAPI application integrating all components
+### OCR Problems
 
-### Frontend Components
+If OCR is not working or producing poor results:
 
-- React-based UI with responsive design
-- Real-time chat interface
-- Document upload and management
-- Advanced query configuration options
+1. Ensure PaddleOCR is installed:
+   ```bash
+   pip install paddleocr paddlepaddle
+   ```
 
-## 📝 Development Roadmap
+2. For better performance, install with GPU support:
+   ```bash
+   pip install paddlepaddle-gpu
+   ```
 
-- [ ] Add support for more document types (DOCX, XLSX, HTML)
-- [ ] Implement batch document processing
-- [ ] Add user authentication and document access control
-- [ ] Implement conversation memory
-- [ ] Add support for other LLM providers (OpenAI, Anthropic)
-- [ ] Develop benchmarking tools for RAG system evaluation
+3. For image-heavy workflows, ensure images are:
+   - High resolution (300+ DPI recommended)
+   - Well-lit with good contrast
+   - Properly oriented
 
-## 🤝 Contributing
+### Memory Issues
+
+If you encounter memory errors:
+
+1. Reduce the context window size in settings
+2. Use a more efficient quantization (4-bit recommended)
+3. Process smaller documents or split large ones
+4. Increase system swap space
+
+## API Reference
+
+The backend exposes these main endpoints:
+
+- `POST /upload`: Upload a document
+- `POST /query-sync`: Query the document
+- `GET /suggestions`: Get suggested questions
+- `POST /set_document`: Set the current document
+- `POST /evaluate/basic`: Evaluate RAG performance
+- `GET /models`: List available models
+- `GET /documents`: List uploaded documents
+- `POST /reset-database`: Reset the vector database
+
+Complete API documentation is available in the `docs/api.md` file.
+
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -171,26 +194,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📜 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 📚 References
+## Acknowledgements
 
-- [LangChain Documentation](https://python.langchain.com/docs/get_started/introduction)
-- [Neo4j Python Driver](https://neo4j.com/docs/python-manual/current/)
-- [Sentence Transformers](https://www.sbert.net/)
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [React Documentation](https://reactjs.org/docs/getting-started.html)
-- [Ollama](https://ollama.ai/docs)
-
-## 🙏 Acknowledgements
-
-- The LangChain community for their excellent RAG examples
-- The Neo4j team for their graph database
-- The Hugging Face team for sentence transformers
-- The Ollama project for making local LLM inference accessible
-
----
-
-Built with ❤️ by [Navid Mirnouri]
+- [LangChain](https://github.com/hwchase17/langchain) for document processing
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) for OCR capabilities
+- [LlamaIndex](https://github.com/jerryjliu/llama_index) for advanced RAG
+- [Sentence Transformers](https://github.com/UKPLab/sentence-transformers) for embeddings
