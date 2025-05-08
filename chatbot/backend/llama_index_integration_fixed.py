@@ -190,19 +190,27 @@ class LlamaIndexRAG:
         try:
             # Get document name from path
             document_name = os.path.basename(file_path)
+            
             index_path = self._get_index_path(document_name)
             
             # Extract text from file
-            document_text = self._extract_text_from_file(file_path)
+            
+            if file_path.lower().endswith(('.jpg', '.jpeg', '.png')):
+                logger.info(f"Skipping LlamaIndex processing for image file: {document_name}")
+                from document_processor_patched import extract_text_from_image
+                document_text = extract_text_from_image(file_path)
+                #  return chunks
+            else:
+                document_text = self._extract_text_from_file(file_path)
             
             # Split into chunks
             chunks = self._chunk_text(document_text, chunk_size, overlap)
             logger.info(f"Split document into {len(chunks)} chunks")
-            
-            # Create vector store
+
+                # Create vector store
             vector_store = SimpleVectorStore()
-            
-            # Create embeddings for chunks
+                
+                # Create embeddings for chunks
             embeddings = []
             metadata = []
             

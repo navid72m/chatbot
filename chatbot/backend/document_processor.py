@@ -64,6 +64,65 @@ def process_document(file_path: str) -> str:
                     text = re.sub(r'\s+', ' ', text)
                     return text
         
+        elif file_extension in ['.jpg', '.jpeg', '.png']:
+            # Image files - use PaddleOCR for high-quality text extraction
+            try:
+                # Import PaddleOCR
+                from paddleocr import PaddleOCR
+                
+                logger.info(f"Processing image with PaddleOCR: {file_path}")
+                
+                # Initialize the PaddleOCR engine
+                # use_angle_cls=True enables text orientation detection for rotated text
+                # lang='en' specifies English (change as needed - supports multiple languages)
+                # use_gpu=True will use GPU acceleration if available
+                ocr = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=is_gpu_available())
+                
+                # Perform OCR on the image
+                result = ocr.ocr(file_path, cls=True)
+                
+                # Process the results
+                extracted_text = ""
+                
+                # PaddleOCR returns a list of detected text regions with coordinates and text
+                if result and len(result) > 0:
+                    for idx, line_result in enumerate(result):
+                        # Handle different output structures based on PaddleOCR version
+                        if isinstance(line_result, list):
+                            # Extract text from each detected area
+                            for item in line_result:
+                                # Each item is a tuple of (points, (text, confidence))
+                                if len(item) >= 2 and isinstance(item[1], tuple) and len(item[1]) >= 1:
+                                    text = item[1][0]  # The text content
+                                    confidence = item[1][1]  # The confidence score
+                                    
+                                    # Only include text with high enough confidence
+                                    if confidence > 0.6:
+                                        extracted_text += text + " "
+                        else:
+                            # Older versions of PaddleOCR might have different output structure
+                            logger.warning("Unexpected PaddleOCR result structure, attempting to extract text anyway")
+                            extracted_text += str(line_result) + " "
+                
+                # Clean up the text
+                extracted_text = re.sub(r'\s+', ' ', extracted_text).strip()
+                
+                logger.info(f"PaddleOCR extracted {len(extracted_text)} characters from image {file_path}")
+                
+                # Warning if very little text was extracted
+                if len(extracted_text) < 20:
+                    logger.warning(f"PaddleOCR extracted very little text from {file_path}, might be a low-quality image or no text content")
+                
+                return extracted_text
+                
+            except ImportError as e:
+                logger.error(f"PaddleOCR not installed: {str(e)}. Please install paddleocr with: pip install paddleocr")
+                return f"ERROR: OCR processing requires PaddleOCR. Please install with: pip install paddleocr"
+                
+            except Exception as e:
+                logger.error(f"Error during OCR processing of {file_path}: {str(e)}")
+                return f"ERROR: OCR processing failed: {str(e)}"
+        
         else:
             # Default case: try to read as text
             logger.warning(f"Unsupported file extension: {file_extension}. Attempting to read as text.")
@@ -73,6 +132,20 @@ def process_document(file_path: str) -> str:
     except Exception as e:
         logger.error(f"Error processing document {file_path}: {str(e)}")
         raise RuntimeError(f"Failed to process document: {str(e)}")
+
+def is_gpu_available():
+    """Check if GPU is available for acceleration"""
+    try:
+        import paddle
+        return paddle.device.is_compiled_with_cuda()
+    except ImportError:
+        # If paddle is not available, we can check for CUDA availability using torch
+        try:
+            import torch
+            return torch.cuda.is_available()
+        except ImportError:
+            # If neither paddle nor torch is available, assume no GPU
+            return False
 
 from langchain.schema import Document  # add this at the top
 

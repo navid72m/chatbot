@@ -28,6 +28,7 @@ You are a precise document assistant answering questions based on the provided c
 4. If the information is not in the context, state "The document doesn't contain information about [topic]"
 5.If there is any uncertainty or the context does not contain the answer, respond exactly with:
 "The context does not contain the answer."
+6. Always translate the answer to English.
 CONTEXT:
 {context}
 
@@ -62,6 +63,7 @@ ANSWER:
         return generated_text.strip()
     except Exception as e:
         logger.error(f"llama.cpp generation error: {str(e)}")
+        logger.error(f"llama.cpp prompt: {prompt}")
         return "Error generating response."
 
 def specialized_prompt_by_question_type(llm, query: str, context: str, question_type: str, temperature: float = 0.7) -> str:

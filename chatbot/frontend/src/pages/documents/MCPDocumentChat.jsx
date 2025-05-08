@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import '../../styles/pages/MCPDocumentChat.css';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { getBackendURL } from '@/api/baseURL'; // adjust based on actual path
+import { getBackendURL } from '@/api/baseURL';
 import { useNavigate } from 'react-router-dom';
 
-// MCPDocumentChat component with RAG evaluation integration
+// MCPDocumentChat component with enhanced styling but same functionality
 const MCPDocumentChat = ({ 
   onError = () => {}
 }) => {
@@ -27,19 +28,20 @@ const MCPDocumentChat = ({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const [showSuggestions, setShowSuggestions] = useState(true);
   
   // Evaluation state
   const [evaluating, setEvaluating] = useState(false);
   const [evaluationError, setEvaluationError] = useState(null);
   
-  // Simplified options with better defaults for performance
+  // Options state
   const [advancedOptions, setAdvancedOptions] = useState({
-    use_advanced_rag: true,  // Simplified to basic RAG
-    use_llama_index: true,   // Added option for LlamaIndex
-    model: "mixtral-8x7b-instruct-v0.1.Q4_K_M",  // Smaller model by default
-    temperature: 0.3,         // Lower temperature for more factual responses
-    context_window: 5,        // Fewer chunks for speed
-    quantization: "4bit"      // 4-bit quantization for better performance
+    use_advanced_rag: true,
+    use_llama_index: true,
+    model: "mixtral-8x7b-instruct-v0.1.Q4_K_M",
+    temperature: 0.3,
+    context_window: 5,
+    quantization: "4bit"
   });
   const [showOptions, setShowOptions] = useState(false);
   const [availableModels, setAvailableModels] = useState(["mixtral-8x7b-instruct-v0.1.Q4_K_M"]);
@@ -119,7 +121,7 @@ const MCPDocumentChat = ({
     e.stopPropagation();
   };
   
-  // Upload file to server - simplified version
+  // Upload file to server
   const handleUpload = async () => {
     if (!file) {
       setUploadError('Please select a file first');
@@ -343,7 +345,7 @@ const MCPDocumentChat = ({
     }
   };
 
-  // Simplified submit handler
+  // Handle submit
   const handleSubmit = async () => {
     if (!input.trim() || loading || !uploadResult || !connected) {
       return;
@@ -450,154 +452,113 @@ const MCPDocumentChat = ({
       handleSubmit();
     }
   };
-  
-  // Connection status indicator
-  const ConnectionStatus = () => (
-    <div style={{ 
-      position: 'fixed', 
-      top: '10px', 
-      right: '10px',
-      padding: '8px 12px',
-      borderRadius: '4px',
-      backgroundColor: connected ? '#10b981' : '#ef4444',
-      color: 'white',
-      fontSize: '12px',
-      fontWeight: '500',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '6px',
-      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-    }}>
-      <div style={{ 
-        width: '8px', 
-        height: '8px', 
-        borderRadius: '50%', 
-        backgroundColor: 'white',
-        boxShadow: connected ? '0 0 5px #10b981' : 'none',
-        animation: connected ? 'none' : 'pulse 1.5s infinite'
-      }}></div>
-      {connected ? 'Connected' : 'Disconnected'}
-    </div>
-  );
-  
+
   return (
-    <div style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '24px' }}>Document Chat</h1>
-      <ConnectionStatus />
+    <div className="document-upload-page">
+      <header className="page-header">
+        <h1>Document Chat</h1>
+        <p>Upload documents and chat with them</p>
+      </header>
       
-      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '24px' }}>
+      {/* Connection Status */}
+      <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
+        <span className="status-indicator"></span>
+        <span>{connected ? 'Connected' : 'Disconnected'}</span>
+      </div>
+      
+      <div className="upload-container">
         {/* Left sidebar */}
-        <div>
+        <div className="upload-sidebar">
           {/* Document upload card */}
-          <div style={{ 
-            backgroundColor: 'white',
-            borderRadius: '8px',
-            padding: '20px',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-            marginBottom: '24px'
-          }}>
-            <h2 style={{ fontSize: '18px', marginBottom: '16px' }}>Upload Document</h2>
+          <div className="upload-card">
+            <div className="card-header">
+              <h2>Upload Document</h2>
+            </div>
             
             {/* Model Settings */}
-            <div style={{ marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>Model Settings</h3>
-              <div style={{
-                backgroundColor: '#f8fafc',
-                padding: '12px',
-                borderRadius: '4px',
-                fontSize: '13px'
-              }}>
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ display: 'block', marginBottom: '4px' }}>Model:</label>
-                  <select
-                    name="model"
-                    value={advancedOptions.model}
-                    onChange={handleOptionChange}
-                    style={{
-                      width: '100%',
-                      padding: '6px',
-                      borderRadius: '4px',
-                      border: '1px solid #cbd5e1'
-                    }}
-                  >
-                    {availableModels.map(model => (
-                      <option key={model} value={model}>{model}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ display: 'block', marginBottom: '4px' }}>
-                    Temperature: {advancedOptions.temperature}
-                  </label>
-                  <input
-                    type="range"
-                    name="temperature"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={advancedOptions.temperature}
-                    onChange={handleOptionChange}
-                    style={{ width: '100%' }}
-                  />
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                    Lower = more factual, Higher = more creative
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '8px',
-                    cursor: 'pointer'
-                  }}>
-                    <input
-                      type="checkbox"
-                      name="use_llama_index"
-                      checked={advancedOptions.use_llama_index}
+            <div className="settings-panel">
+              <button 
+                className="settings-toggle"
+                onClick={() => setShowOptions(!showOptions)}
+              >
+                <span>Model Settings</span>
+                <span className={`toggle-icon ${showOptions ? 'open' : ''}`}>▼</span>
+              </button>
+              
+              {showOptions && (
+                <div className="settings-content">
+                  <div className="setting-group">
+                    <label>Model:</label>
+                    <select
+                      name="model"
+                      value={advancedOptions.model}
                       onChange={handleOptionChange}
-                    />
-                    Use LlamaIndex RAG
-                  </label>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                    Enable advanced LlamaIndex RAG for better retrieval
+                      className="select-input"
+                    >
+                      {availableModels.map(model => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
                   </div>
-                </div>
-
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '8px',
-                    cursor: 'pointer'
-                  }}>
+                  
+                  <div className="setting-group">
+                    <label>
+                      Temperature: <span className="temperature-value">{advancedOptions.temperature}</span>
+                    </label>
                     <input
-                      type="checkbox"
-                      name="use_advanced_rag"
-                      checked={advancedOptions.use_advanced_rag}
+                      type="range"
+                      name="temperature"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={advancedOptions.temperature}
                       onChange={handleOptionChange}
+                      className="range-input"
                     />
-                    Use Advanced RAG
-                  </label>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                    Enable advanced retrieval for better context understanding
+                    <div className="range-labels">
+                      <span>Precise</span>
+                      <span>Creative</span>
+                    </div>
+                  </div>
+
+                  <div className="checkbox-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        name="use_llama_index"
+                        checked={advancedOptions.use_llama_index}
+                        onChange={handleOptionChange}
+                        className="checkbox-input"
+                      />
+                      <div className="checkbox-text">
+                        <span>Use LlamaIndex RAG</span>
+                        <span className="checkbox-description">Better retrieval for complex documents</span>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="checkbox-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        name="use_advanced_rag"
+                        checked={advancedOptions.use_advanced_rag}
+                        onChange={handleOptionChange}
+                        className="checkbox-input"
+                      />
+                      <div className="checkbox-text">
+                        <span>Use Advanced RAG</span>
+                        <span className="checkbox-description">Enhanced semantic understanding</span>
+                      </div>
+                    </label>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div 
-              style={{ 
-                border: '2px dashed #cbd5e1',
-                borderRadius: '8px',
-                padding: '24px',
-                textAlign: 'center',
-                backgroundColor: '#f8fafc',
-                marginBottom: '16px',
-                cursor: 'pointer'
-              }}
-              onClick={() => fileInputRef.current?.click()}
+              className={`dropzone ${file ? 'active' : ''} ${uploading ? 'uploading' : ''}`}
+              onClick={() => !uploading && fileInputRef.current?.click()}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
             >
@@ -606,53 +567,44 @@ const MCPDocumentChat = ({
                 ref={fileInputRef}
                 onChange={handleFileChange}
                 style={{ display: 'none' }}
-                accept=".pdf,.doc,.docx,.txt,.csv,.xlsx"
+                accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.jpg,.jpeg,.png"
               />
-              <div style={{ fontSize: '36px', marginBottom: '12px' }}>📄</div>
-              <p style={{ marginBottom: '8px' }}>
-                {file ? file.name : 'Drag & drop or click to browse'}
-              </p>
-              {file && (
-                <p style={{ fontSize: '12px', color: '#64748b' }}>
-                  {(file.size / 1024).toFixed(2)} KB
+              
+              <div className="dropzone-content">
+                <div className="upload-icon">
+                  <span>📄</span>
+                </div>
+                <p className="upload-text">
+                  {file ? file.name : 'Drag & drop or click to upload'}
                 </p>
-              )}
+                <p className="file-types">
+                  {file 
+                    ? `${(file.size / 1024).toFixed(2)} KB` 
+                    : 'PDF, DOCX, TXT, CSV, XLSX (Max 20MB)'}
+                </p>
+              </div>
             </div>
             
             {/* Progress bar */}
             {uploading && (
-              <div style={{ marginBottom: '16px' }}>
-                <div style={{ 
-                  height: '6px',
-                  backgroundColor: '#e2e8f0',
-                  borderRadius: '3px',
-                  overflow: 'hidden',
-                  marginBottom: '8px'
-                }}>
-                  <div style={{
-                    height: '100%',
-                    width: `${uploadProgress}%`,
-                    backgroundColor: '#4f46e5',
-                    transition: 'width 0.3s'
-                  }}></div>
+              <div className="progress-container">
+                <div className="progress-bar">
+                  <div 
+                    className="progress-fill"
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
                 </div>
-                <p style={{ fontSize: '12px', color: '#64748b', textAlign: 'center' }}>
+                <div className="progress-text">
                   Uploading: {uploadProgress}%
-                </p>
+                </div>
               </div>
             )}
             
             {/* Error message */}
             {uploadError && (
-              <div style={{
-                backgroundColor: '#fee2e2',
-                color: '#ef4444',
-                padding: '10px',
-                borderRadius: '4px',
-                marginBottom: '16px',
-                fontSize: '14px'
-              }}>
-                {uploadError}
+              <div className="error-message">
+                <span className="error-icon">⚠️</span>
+                <p>{uploadError}</p>
               </div>
             )}
             
@@ -660,17 +612,7 @@ const MCPDocumentChat = ({
             <button
               onClick={handleUpload}
               disabled={!file || uploading || !connected}
-              style={{
-                backgroundColor: !file || uploading || !connected ? '#94a3b8' : '#4f46e5',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                padding: '10px 0',
-                width: '100%',
-                fontSize: '14px',
-                fontWeight: '500',
-                cursor: !file || uploading || !connected ? 'not-allowed' : 'pointer',
-              }}
+              className={`upload-button ${(!file || uploading || !connected) ? 'disabled' : ''}`}
             >
               {uploading ? 'Uploading...' : 'Upload Document'}
             </button>
@@ -678,36 +620,25 @@ const MCPDocumentChat = ({
           
           {/* Document info card */}
           {uploadResult && (
-            <div style={{
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              padding: '20px',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-              borderLeft: '4px solid #10b981',
-              marginBottom: '24px'
-            }}>
-              <h2 style={{ fontSize: '18px', color: '#10b981', marginBottom: '16px' }}>Document Details</h2>
+            <div className="document-card">
+              <div className="card-header success">
+                <h2>Document Details</h2>
+              </div>
               
-              <div style={{
-                backgroundColor: '#f8fafc',
-                padding: '16px',
-                borderRadius: '4px',
-                fontSize: '14px'
-              }}>
-                <p style={{ marginBottom: '8px' }}><strong>Filename:</strong> {uploadResult.filename || 'Document'}</p>
-                <p style={{ marginBottom: '8px' }}><strong>Chunks:</strong> {uploadResult.chunks || 'Unknown'}</p>
+              <div className="document-details">
+                <div className="info-item">
+                  <span className="info-label">Filename:</span>
+                  <span className="info-value">{uploadResult.filename}</span>
+                </div>
+                <div className="info-item">
+                  <span className="info-label">Chunks:</span>
+                  <span className="info-value">{uploadResult.chunks}</span>
+                </div>
+                
                 {uploadResult.preview && (
-                  <details style={{ marginTop: '12px' }}>
-                    <summary style={{ cursor: 'pointer', color: '#4f46e5' }}>Document Preview</summary>
-                    <div style={{ 
-                      marginTop: '8px',
-                      padding: '8px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.05)',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      maxHeight: '200px',
-                      overflowY: 'auto'
-                    }}>
+                  <details className="document-preview">
+                    <summary>Document Preview</summary>
+                    <div className="preview-content">
                       {uploadResult.preview}
                     </div>
                   </details>
@@ -718,295 +649,134 @@ const MCPDocumentChat = ({
 
           {/* RAG Evaluation Button */}
           {uploadResult && (
-            <div style={{
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              padding: '20px',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-              borderLeft: '4px solid #8b5cf6',
-              marginBottom: '24px'
-            }}>
-              <h2 style={{ fontSize: '18px', color: '#8b5cf6', marginBottom: '16px' }}>RAG Evaluation</h2>
-              
-              <div style={{
-                backgroundColor: '#f8fafc',
-                padding: '16px',
-                borderRadius: '4px',
-                fontSize: '14px',
-                marginBottom: '16px'
-              }}>
-                <p>Evaluate and compare the performance of different RAG systems on this document.</p>
+            <div className="evaluation-card">
+              <div className="card-header purple">
+                <h2>RAG Evaluation</h2>
               </div>
               
-              {evaluationError && (
-                <div style={{
-                  backgroundColor: '#fee2e2',
-                  color: '#ef4444',
-                  padding: '10px',
-                  borderRadius: '4px',
-                  marginBottom: '16px',
-                  fontSize: '14px'
-                }}>
-                  {evaluationError}
-                </div>
-              )}
-              
-              <button
-                onClick={handleEvaluateRAG}
-                disabled={evaluating || !connected || !uploadResult}
-                style={{
-                  backgroundColor: evaluating || !connected || !uploadResult ? '#94a3b8' : '#8b5cf6',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  padding: '10px 0',
-                  width: '100%',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: evaluating || !connected || !uploadResult ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
-                }}
-              >
-                {evaluating ? (
-                  <>
-                    <div style={{ 
-                      width: '16px', 
-                      height: '16px', 
-                      borderRadius: '50%', 
-                      border: '2px solid rgba(255,255,255,0.3)',
-                      borderTopColor: 'white',
-                      animation: 'spin 1s linear infinite' 
-                    }}></div>
-                    Evaluating...
-                  </>
-                ) : (
-                  <>📊 Evaluate RAG Systems</>
+              <div className="evaluation-content">
+                <p>Compare the performance of different RAG systems on this document.</p>
+                
+                {evaluationError && (
+                  <div className="error-message">
+                    <span className="error-icon">⚠️</span>
+                    <p>{evaluationError}</p>
+                  </div>
                 )}
-              </button>
+                
+                <button
+                  onClick={handleEvaluateRAG}
+                  disabled={evaluating || !connected || !uploadResult}
+                  className={`evaluate-button ${(evaluating || !connected || !uploadResult) ? 'disabled' : ''}`}
+                >
+                  {evaluating ? 'Evaluating...' : '📊 Evaluate RAG Systems'}
+                </button>
+              </div>
             </div>
           )}
         </div>
         
         {/* Chat interface */}
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          height: '600px',
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-          overflow: 'hidden'
-        }}>
-          {/* Chat header */}
-          <div style={{ 
-            padding: '16px', 
-            borderBottom: '1px solid #e2e8f0',
-            backgroundColor: '#f8fafc'
-          }}>
-            <h2 style={{ margin: 0, fontSize: '18px' }}>Document Chat</h2>
-            <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#64748b' }}>
-              {uploadResult 
-                ? `Ask questions about: ${uploadResult.filename}` 
-                : 'Upload a document to start chatting'}
-            </p>
+        <div className="chat-container">
+          <div className="chat-header">
+            <div className="chat-title">
+              <h2>Document Chat</h2>
+              <p>
+                {uploadResult 
+                  ? `Ask questions about: ${uploadResult.filename}` 
+                  : 'Upload a document to start chatting'}
+              </p>
+            </div>
           </div>
           
-          {/* Messages container */}
-          <div style={{ 
-            flex: 1, 
-            overflowY: 'auto',
-            padding: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-            backgroundColor: '#f8fafc'
-          }}>
+          <div className="messages-container">
             {!connected ? (
-              <div style={{ 
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: '#94a3b8',
-                textAlign: 'center',
-                padding: '0 32px'
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔄</div>
-                <h3 style={{ marginBottom: '8px', color: '#64748b' }}>Connecting to Server...</h3>
+              <div className="empty-state">
+                <div className="empty-icon disconnected">🔄</div>
+                <h3>Connecting to Server...</h3>
                 <p>Please wait while we establish connection to the server.</p>
               </div>
             ) : !uploadResult ? (
-              <div style={{ 
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: '#94a3b8',
-                textAlign: 'center',
-                padding: '0 32px'
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>📄</div>
-                <h3 style={{ marginBottom: '8px', color: '#64748b' }}>No Document Uploaded</h3>
+              <div className="empty-state">
+                <div className="empty-icon">📄</div>
+                <h3>No Document Uploaded</h3>
                 <p>Upload a document using the panel on the left to start asking questions about it.</p>
               </div>
             ) : messages.length === 0 ? (
-              <div style={{ 
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: '#94a3b8',
-                textAlign: 'center',
-                padding: '0 32px'
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>💬</div>
-                <h3 style={{ marginBottom: '8px', color: '#64748b' }}>Start the Conversation</h3>
+              <div className="empty-state">
+                <div className="empty-icon">💬</div>
+                <h3>Start the Conversation</h3>
                 <p>Your document is ready. Type a question below to start chatting about its contents.</p>
               </div>
             ) : (
-              // Map through and render messages
-              messages.map(message => (
-                <div 
-                  key={message.id} 
-                  style={{
-                    maxWidth: message.role === 'user' ? '80%' : '90%',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
-                    backgroundColor: message.role === 'user' ? '#4f46e5' : 
-                                    message.role === 'system' ? (message.isThinking ? '#f97316' : '#f8fafc') : 
-                                    '#ffffff',
-                    color: message.role === 'user' ? 'white' : 
-                          message.role === 'system' ? (message.isError ? '#ef4444' : '#1e293b') : '#1e293b',
-                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-                    borderLeft: message.isThinking ? '3px solid #f97316' : 
-                               message.role === 'system' ? '3px solid #64748b' : 
-                               message.system === 'llama_index' ? '3px solid #8b5cf6' : 'none',
-                    border: message.role === 'system' ? '1px solid #e2e8f0' : 'none'
-                  }}
-                >
+              <div className="messages-list">
+                {messages.map(message => (
                   <div 
-                    style={{ 
-                      fontSize: '14px', 
-                      whiteSpace: 'pre-wrap',
-                    }}
+                    key={message.id} 
+                    className={`message ${message.role} ${message.isThinking ? 'thinking' : ''} ${message.isError ? 'error' : ''} ${message.system === 'llama_index' ? 'llama-index' : ''}`}
                   >
-                    {message.content}
+                    <div className="message-content">
+                      {message.content}
+                    </div>
+                    
+                    <div className="message-footer">
+                      <span className="message-time">
+                        {new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                      </span>
+                      {message.system === 'llama_index' && (
+                        <span className="model-badge">LlamaIndex</span>
+                      )}
+                    </div>
                   </div>
-                  
-                  {/* Display metadata */}
-                  <div style={{ 
-                    fontSize: '11px', 
-                    marginTop: '4px',
-                    opacity: 0.7,
-                    textAlign: message.role === 'user' ? 'right' : 'left',
-                    display: 'flex',
-                    justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}>
-                    <span>{new Date(message.timestamp).toLocaleTimeString()}</span>
-                    {message.system === 'llama_index' && (
-                      <span style={{ 
-                        backgroundColor: '#8b5cf6',
-                        color: 'white',
-                        fontSize: '9px',
-                        padding: '2px 4px',
-                        borderRadius: '4px'
-                      }}>LlamaIndex</span>
-                    )}
-                  </div>
-                </div>
-              ))
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
             )}
-            
-            {/* Scrolling anchor */}
-            <div ref={messagesEndRef} />
           </div>
           
           {/* Suggested questions */}
-          {suggestedQuestions.length > 0 && (
-            <div style={{ 
-              padding: '12px 16px',
-              borderTop: '1px solid #e2e8f0',
-              backgroundColor: '#f8fafc',
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '8px'
-            }}>
-              {suggestedQuestions.map((question, idx) => (
-                <button 
-                  key={idx}
-                  onClick={() => setInput(question)}
-                  style={{
-                    fontSize: '12px',
-                    padding: '6px 12px',
-                    borderRadius: '16px',
-                    border: '1px solid #cbd5e1',
-                    backgroundColor: '#f1f5f9',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s ease'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#e2e8f0'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
-          )}
+          {suggestedQuestions.length > 0 && showSuggestions && (
+  <div className="suggested-questions-container">
+    <div className="suggested-questions-header">
+      <span className="suggested-questions-title">Suggested Questions</span>
+      <button 
+        className="suggested-questions-close" 
+        onClick={() => setShowSuggestions(false)}
+        aria-label="Close suggested questions"
+      >
+        ✕
+      </button>
+    </div>
+    <div className="suggested-questions">
+      {suggestedQuestions.map((question, idx) => (
+        <button 
+          key={idx}
+          onClick={() => setInput(question)}
+          className="suggested-question"
+        >
+          {question}
+        </button>
+      ))}
+    </div>
+  </div>
+)}
           
           {/* Input area */}
-          <div style={{ 
-            padding: '16px',
-            borderTop: '1px solid #e2e8f0',
-            backgroundColor: '#ffffff',
-            display: 'flex',
-            gap: '8px'
-          }}>
-            
+          <div className="input-container">
             <textarea
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={connected && uploadResult ? "Type your question..." : connected ? "Upload a document to start chatting" : "Connecting to server..."}
               disabled={!connected || !uploadResult || loading}
-              style={{
-                flex: 1,
-                border: '1px solid #cbd5e1',
-                borderRadius: '8px',
-                padding: '12px',
-                resize: 'none',
-                fontSize: '14px',
-                minHeight: '24px',
-                maxHeight: '120px',
-                fontFamily: 'inherit',
-                backgroundColor: connected && uploadResult ? '#ffffff' : '#f1f5f9'
-              }}
+              className={`chat-input ${(!connected || !uploadResult) ? 'disabled' : ''}`}
               rows={1}
             />
             
             <button
               onClick={handleSubmit}
               disabled={!connected || !uploadResult || !input.trim() || loading}
-              style={{
-                backgroundColor: !connected || !uploadResult || !input.trim() || loading ? '#94a3b8' : '#4f46e5',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '0 16px',
-                fontSize: '14px',
-                cursor: !connected || !uploadResult || !input.trim() || loading ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
+              className={`send-button ${(!connected || !uploadResult || !input.trim() || loading) ? 'disabled' : ''}`}
             >
               {loading ? 'Thinking...' : 'Send'}
             </button>
@@ -1014,32 +784,6 @@ const MCPDocumentChat = ({
         </div>
       </div>
       
-      {/* CSS for animations */}
-      <style jsx="true">{`
-        @keyframes pulse {
-          0% {
-            opacity: 0.6;
-            transform: scale(0.8);
-          }
-          50% {
-            opacity: 1;
-            transform: scale(1);
-          }
-          100% {
-            opacity: 0.6;
-            transform: scale(0.8);
-          }
-        }
-        
-        @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-      `}</style>
     </div>
   );
 };
