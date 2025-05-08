@@ -6,7 +6,7 @@ A powerful document analysis and chat application with advanced OCR and RAG (Ret
 
 ## Demo
 
-[![Watch the demo](assets/demo_thumbnail_with_play.png)](https://youtu.be/cIJL3SNN4R4)
+[![Watch the demo](https://img.youtube.com/vi/cIJL3SNN4R4/hqdefault.jpg)](https://youtu.be/cIJL3SNN4R4)
 
 *Click on the image above to watch the demo video*
 
