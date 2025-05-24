@@ -43,13 +43,9 @@ class SimpleSentenceTransformer:
     def embed_documents(self, documents):
         results = []
         texts = [doc.page_content for doc in documents]
-        for text in texts:
-            # Process one at a time
-            embedding = self.encode_single_text(text)
-            results.append(embedding.tolist())
-            # Add small delay between processing to allow memory cleanup
-            time.sleep(0.1)
-        return results
+        embeddings = self.encode(texts, convert_to_numpy=True)
+        return [embedding.tolist() for embedding in embeddings]
+
     def encode(self, texts, convert_to_numpy=True):
         embeddings = []
         for text in texts:
@@ -429,7 +425,7 @@ def process_and_index_file(file_path: str):
         text = truncate_text_for_context_window(text)
         
         # Split text into chunks
-        max_chunk_size = 200  # Small enough to avoid memory issues
+        max_chunk_size = 512  # Small enough to avoid memory issues
         
         # Split by sentences or short paragraphs
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
@@ -479,9 +475,9 @@ def process_and_index_file(file_path: str):
         logger.info(f"Split document into {len(chunks)} chunks")
         
         # Limit total number of chunks to prevent context issues
-        if len(chunks) > 30:
-            logger.warning(f"Too many chunks ({len(chunks)}), limiting to 30")
-            chunks = chunks[:30]
+        # if len(chunks) > 30:
+        #     logger.warning(f"Too many chunks ({len(chunks)}), limiting to 30")
+        #     chunks = chunks[:30]
         
         # Validate chunks before adding to vector store
         valid_chunks = []
