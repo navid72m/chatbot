@@ -1,42 +1,57 @@
 import sys
 import os
 import json
-sys.path.append(os.path.dirname(__file__))
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
-from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Optional, Any
+import time
 import logging
 import shutil
+from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from generate_suggestions import generate_suggested_questions
 from llama_cpp import Llama
 
-# Import the original modules
-from document_processor_patched import process_and_index_file, query_index, query_index_with_context
+# Add current directory to path
+sys.path.append(os.path.dirname(__file__))
 
-# Import new LlamaIndex integration (fixed version)
-from llama_index_integration_fixed import LlamaIndexRAG
+# Import enhanced document processor with smart retrieval
+from updated_document_processor import (
+    process_and_index_file, 
+    query_index, 
+    query_index_with_context,
+    get_smart_processing_stats,
+    smart_rag_pipeline
+)
 
-# Import LLM interface
+# Import query rewriting components (if available)
+try:
+    from enhanced_llama_index_integration import EnhancedLlamaIndexRAG
+    QUERY_REWRITING_AVAILABLE = True
+    logging.info("Query rewriting components loaded successfully")
+except ImportError as e:
+    logging.warning(f"Enhanced query rewriting not available: {e}")
+    QUERY_REWRITING_AVAILABLE = False
+
+# Import other components
+from generate_suggestions import generate_suggested_questions
 from llama_cpp_interface import stream_llama_cpp_response, list_llama_cpp_models
 
+# Environment setup
 os.environ["CHROMA_TELEMETRY_DISABLED"] = "1"
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Storage directory for documents
+# Storage directories
 UPLOAD_DIR = os.path.expanduser("~/Library/Application Support/Document Chat/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Storage directory for evaluation results
 EVAL_DIR = os.path.expanduser("~/Library/Application Support/Document Chat/evaluation")
 os.makedirs(EVAL_DIR, exist_ok=True)
 
-# Pydantic models for API requests/responses
+# Pydantic models
 class QueryRequest(BaseModel):
     query: str
     model: str = "mistral"
@@ -44,14 +59,39 @@ class QueryRequest(BaseModel):
     context_window: int = 5
     quantization: str = "4bit"
     use_advanced_rag: bool = False
-    use_llama_index: bool = True  # New parameter to toggle LlamaIndex
+    use_llama_index: bool = True
     current_document: Optional[str] = None
+    # Smart retrieval parameters
+    use_smart_retrieval: bool = True
+    # Query rewriting parameters
+    use_prf: bool = True
+    use_variants: bool = True
+    prf_iterations: int = 1
+    fusion_method: str = "rrf"
+    rerank: bool = True
+
+class SmartProcessingConfig(BaseModel):
+    use_smart_processing: bool = True
+    extract_entities: bool = True
+    create_smart_chunks: bool = True
+    enable_smart_search: bool = True
+    auto_detect_document_type: bool = True
+
+class QueryRewritingConfig(BaseModel):
+    use_prf: bool = True
+    use_variants: bool = True
+    prf_iterations: int = 1
+    fusion_method: str = "rrf"
+    rerank: bool = True
+    prf_top_k: int = 3
+    expansion_terms: int = 5
+    variant_count: int = 3
 
 # Create FastAPI application
-app = FastAPI(title="Document Chat Backend")
+app = FastAPI(title="Smart Document Chat Backend with Universal Retrieval + Query Rewriting")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Model paths
+# Model configuration
 MODEL_PATH = os.environ.get("LLAMA_CPP_MODEL_PATH", "./models/mamba-790m-hf.Q4_K_M.gguf")
 CTX_SIZE = int(os.environ.get("LLAMA_CTX_SIZE", 2048))
 N_THREADS = int(os.environ.get("LLAMA_THREADS", os.cpu_count()))
@@ -59,9 +99,10 @@ N_GPU_LAYERS = int(os.environ.get("LLAMA_GPU_LAYERS", -1))
 
 # Global variables
 suggested_questions_by_doc = {}
+document_processing_results = {}
 
+# Initialize LLM
 try:
-    # Add n_gpu_layers parameter for Apple Silicon
     llm = Llama(
         model_path=MODEL_PATH, 
         n_ctx=CTX_SIZE, 
@@ -73,8 +114,14 @@ except Exception as e:
     logger.error(f"Failed to load LLaMA model: {str(e)}")
     llm = None
 
-# Initialize LlamaIndex RAG system
-llama_index_rag = LlamaIndexRAG(MODEL_PATH)
+# Initialize enhanced RAG with query rewriting
+enhanced_rag_with_rewriting = None
+if QUERY_REWRITING_AVAILABLE:
+    try:
+        enhanced_rag_with_rewriting = EnhancedLlamaIndexRAG(MODEL_PATH)
+        logger.info("Enhanced RAG with query rewriting initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize enhanced RAG with query rewriting: {e}")
 
 # Set up CORS
 app.add_middleware(
@@ -87,9 +134,29 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
+    features = [
+        "Universal Entity Extraction",
+        "Smart Document Type Detection", 
+        "Intelligent Chunking",
+        "Adaptive Query Processing",
+        "Multi-Strategy Retrieval"
+    ]
+    
+    if QUERY_REWRITING_AVAILABLE:
+        features.extend([
+            "Pseudo Relevance Feedback (PRF)",
+            "Query Variants Generation", 
+            "Reciprocal Rank Fusion (RRF)",
+            "Cross-Encoder Reranking",
+            "Multi-Query Processing"
+        ])
+    
     return {
-        "message": "Document Chat Backend API",
-        "features": ["Vector Search", "Document Q&A", "LlamaIndex RAG"]
+        "message": "Smart Document Chat Backend with Universal Retrieval + Query Rewriting",
+        "features": features,
+        "supported_documents": ["PDF", "Text", "Images", "Resumes", "Reports", "Contracts", "Manuals"],
+        "query_rewriting": QUERY_REWRITING_AVAILABLE,
+        "version": "2.0"
     }
 
 @app.get("/kg")
@@ -100,33 +167,65 @@ async def kg_view():
 async def upload_document(
     file: UploadFile = File(...),
     use_advanced_rag: bool = Form(False),
-    use_llama_index: bool = Form(True)  # New parameter
+    use_llama_index: bool = Form(True),
+    use_smart_processing: bool = Form(True)
 ):
     try:
         file_path = os.path.join(UPLOAD_DIR, file.filename)
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # Process with original system
-        chunks, suggested_questions = process_and_index_file(file_path)
+        logger.info(f"Processing {file.filename} with smart processing: {use_smart_processing}")
         
-        # Also process with LlamaIndex if requested
-        if use_llama_index:
+        # Process with enhanced document processor
+        processing_result = process_and_index_file(file_path, use_smart_processing)
+        
+        # Also process with query rewriting system if available
+        rewriting_result = None
+        if QUERY_REWRITING_AVAILABLE and enhanced_rag_with_rewriting and use_llama_index:
             try:
-                logger.info("Processing document with LlamaIndex")
-                llama_chunks = llama_index_rag.process_document(file_path)
-                logger.info(f"LlamaIndex processed {len(llama_chunks)} chunks")
+                logger.info("Also processing with query rewriting system")
+                rewriting_result = enhanced_rag_with_rewriting.process_document_robust(file_path)
+                logger.info("Query rewriting system processing complete")
             except Exception as e:
-                logger.error(f"Error in LlamaIndex processing: {str(e)}")
+                logger.error(f"Query rewriting processing failed: {str(e)}")
+        
+        # Handle different return formats
+        if len(processing_result) == 3:
+            chunks, suggested_questions, smart_result = processing_result
+            document_processing_results[file.filename] = smart_result
+            
+            response_data = {
+                "success": True,
+                "filename": file.filename,
+                "chunks": len(chunks),
+                "preview": f"Smart processing complete. Document type: {smart_result.get('document_type', 'general')}",
+                "smart_processing": True,
+                "document_type": smart_result.get("document_type", "general"),
+                "entities_found": smart_result.get("entities_found", 0),
+                "key_entities": [
+                    {
+                        "text": entity.text,
+                        "type": entity.label,
+                        "confidence": entity.confidence
+                    } for entity in smart_result.get("key_entities", [])[:5]
+                ],
+                "query_rewriting_ready": rewriting_result is not None
+            }
+        else:
+            chunks, suggested_questions = processing_result
+            response_data = {
+                "success": True,
+                "filename": file.filename,
+                "chunks": len(chunks),
+                "preview": "Traditional processing complete",
+                "smart_processing": False,
+                "query_rewriting_ready": rewriting_result is not None
+            }
         
         suggested_questions_by_doc[file.filename] = suggested_questions
-
-        return {
-            "success": True,
-            "filename": file.filename,
-            "chunks": len(chunks),
-            "preview": "Document uploaded successfully"
-        }
+        return response_data
+        
     except Exception as e:
         logger.error(f"Error processing document: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
@@ -167,72 +266,144 @@ async def query_sync(request: dict):
             if not document:
                 return {"response": "Please upload a document first before querying.", "error": "No document selected"}
 
+        # Get parameters
         temperature = request.get("temperature", 0.3)
         context_window = request.get("context_window", 5)
-        use_llama_index = request.get("use_llama_index", True)
+        use_smart_retrieval = request.get("use_smart_retrieval", True)
         
-        # Use LlamaIndex if requested
-        if use_llama_index:
-            logger.info(f"Using LlamaIndex for query: {query}")
+        # Query rewriting parameters
+        use_prf = request.get("use_prf", True)
+        use_variants = request.get("use_variants", True)
+        prf_iterations = request.get("prf_iterations", 1)
+        fusion_method = request.get("fusion_method", "rrf")
+        rerank = request.get("rerank", True)
+        
+        logger.info(f"Processing query with smart retrieval: {use_smart_retrieval}, PRF: {use_prf}, variants: {use_variants}")
+        
+        # Try to set document context
+        try:
+            await set_document({"document": document})
+        except:
+            pass
+        
+        # Strategy 1: Enhanced RAG with Query Rewriting (highest priority)
+        if QUERY_REWRITING_AVAILABLE and enhanced_rag_with_rewriting and (use_prf or use_variants):
             try:
-                # Query using LlamaIndex
-                result = llama_index_rag.query(
+                logger.info("Using enhanced RAG with query rewriting")
+                
+                enhanced_result = enhanced_rag_with_rewriting.query_robust(
                     query_text=query,
                     document_name=document,
-                    top_k=context_window
+                    top_k=context_window,
+                    use_robust_retrieval=True,
+                    use_prf=use_prf,
+                    use_variants=use_variants,
+                    prf_iterations=prf_iterations,
+                    fusion_method=fusion_method,
+                    rerank=rerank,
+                    temperature=temperature
                 )
                 
-                # If LlamaIndex returns a response, use it
-                if result["response"] and len(result["response"]) > 10:
-                    return {
-                        "response": result["response"],
-                        "sources": result["sources"],
-                        "document": document,
-                        "system": "llama_index"
-                    }
+                return {
+                    "response": enhanced_result["response"],
+                    "sources": enhanced_result["sources"],
+                    "document": document,
+                    "system": enhanced_result.get("system", "enhanced_with_query_rewriting"),
+                    "query_rewriting_info": {
+                        "prf_applied": use_prf,
+                        "variants_generated": use_variants,
+                        "fusion_method": fusion_method,
+                        "reranking_applied": rerank,
+                        "iterations": prf_iterations,
+                        "all_queries": enhanced_result.get("query_rewriting", {}).get("all_queries", [query])
+                    },
+                    "entity_matches": enhanced_result.get("entity_matches", []),
+                    "enhancement_info": enhanced_result.get("enhancement_info", {}),
+                    "enhancement_applied": True
+                }
                 
-                # Otherwise, use our local LLM with retrieved context
-                chunks_text = "\n\n".join([f"Document: {chunk}" for chunk, _ in result["chunks_retrieved"]])
-                if not chunks_text:
-                    return {
-                        "response": "I don't have enough information to answer this question based on the document.",
-                        "document": document,
-                        "system": "llama_index"
-                    }
+            except Exception as e:
+                logger.error(f"Enhanced RAG with query rewriting failed: {str(e)}")
+        
+        # Strategy 2: Smart RAG without query rewriting
+        if use_smart_retrieval and smart_rag_pipeline:
+            try:
+                logger.info("Using smart RAG without query rewriting")
                 
-                # Use local model with retrieved context
+                smart_result = smart_rag_pipeline.query_smart(query, document, context_window)
+                
                 response_text = stream_llama_cpp_response(
-                    query=query, 
-                    context=chunks_text, 
-                    model="mamba", 
+                    query=query,
+                    context=smart_result["context"],
+                    model="mamba",
                     temperature=temperature
                 )
                 
                 return {
                     "response": response_text["response"] if isinstance(response_text, dict) else response_text,
-                    "sources": result["sources"],
+                    "sources": [document],
                     "document": document,
-                    "system": "llama_index"
+                    "system": "smart_rag",
+                    "smart_retrieval_info": {
+                        "query_analysis": smart_result["query_analysis"],
+                        "entity_info": smart_result["entity_info"],
+                        "retrieval_strategy": smart_result["retrieval_strategy"],
+                        "chunks_searched": smart_result["total_chunks_searched"]
+                    },
+                    "query_rewriting_info": {
+                        "available": QUERY_REWRITING_AVAILABLE,
+                        "applied": False,
+                        "reason": "Smart retrieval used instead"
+                    },
+                    "enhancement_applied": True
                 }
                 
             except Exception as e:
-                logger.error(f"LlamaIndex query failed: {str(e)}, falling back to default method")
-                # Continue with original approach as fallback
+                logger.error(f"Smart retrieval failed: {str(e)}")
         
-        # Original implementation as fallback
-        relevant_chunks = query_index(query, context_window)
-        if not relevant_chunks:
-            return {"response": "I don't have enough information to answer this question based on the document.", "document": document, "system": "original"}
-
-        context = query_index_with_context(query, context_window)
-        response_text = stream_llama_cpp_response(query=query, context=context, model="mamba", temperature=temperature)
-
-        return {
-            "response": response_text["response"] if isinstance(response_text, dict) else response_text,
-            "sources": [],
-            "document": document,
-            "system": "original"
-        }
+        # Strategy 3: Enhanced traditional retrieval
+        try:
+            logger.info("Using enhanced traditional retrieval")
+            
+            context = query_index_with_context(query, context_window, use_smart_retrieval=False)
+            
+            if not context.strip():
+                return {
+                    "response": "I don't have enough information to answer this question based on the document.",
+                    "document": document,
+                    "system": "traditional_fallback"
+                }
+            
+            response_text = stream_llama_cpp_response(
+                query=query,
+                context=context,
+                model="mamba",
+                temperature=temperature
+            )
+            
+            return {
+                "response": response_text["response"] if isinstance(response_text, dict) else response_text,
+                "sources": [document],
+                "document": document,
+                "system": "enhanced_traditional",
+                "query_rewriting_info": {
+                    "available": QUERY_REWRITING_AVAILABLE,
+                    "applied": False,
+                    "reason": "Fallback to traditional retrieval"
+                },
+                "enhancement_applied": False
+            }
+            
+        except Exception as e:
+            logger.error(f"Enhanced traditional retrieval failed: {str(e)}")
+            
+            # Final fallback
+            return {
+                "response": "I encountered an error processing your query. Please try again.",
+                "document": document,
+                "system": "error_fallback",
+                "error": str(e)
+            }
 
     except Exception as e:
         logger.error(f"Error processing query-sync: {str(e)}")
@@ -242,17 +413,65 @@ async def query_sync(request: dict):
             "success": False
         }
 
-@app.post("/configure")
-async def configure(config: dict):
+@app.post("/configure-query-rewriting")
+async def configure_query_rewriting(config: QueryRewritingConfig):
     try:
-        config_data = config.get("config", {})
-        if not config_data:
-            raise HTTPException(status_code=400, detail="No configuration provided")
-        logger.info(f"Received configuration update: {config_data}")
-        return {"success": True, "message": "Configuration updated", "config": config_data}
+        logger.info(f"Updating query rewriting configuration: {config.dict()}")
+        app.state.query_rewriting_config = config.dict()
+        return {
+            "success": True, 
+            "message": "Query rewriting configuration updated",
+            "config": config.dict(),
+            "available": QUERY_REWRITING_AVAILABLE
+        }
     except Exception as e:
-        logger.error(f"Error updating configuration: {str(e)}")
+        logger.error(f"Error updating query rewriting configuration: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error updating configuration: {str(e)}")
+
+@app.get("/query-rewriting-config")
+async def get_query_rewriting_config():
+    try:
+        default_config = QueryRewritingConfig().dict()
+        current_config = getattr(app.state, "query_rewriting_config", default_config)
+        return {
+            "config": current_config,
+            "available": QUERY_REWRITING_AVAILABLE
+        }
+    except Exception as e:
+        logger.error(f"Error fetching query rewriting configuration: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.get("/query-rewriting-options")
+async def get_query_rewriting_options():
+    return {
+        "available": QUERY_REWRITING_AVAILABLE,
+        "techniques": [
+            {"value": "prf", "label": "Pseudo Relevance Feedback (PRF)", 
+             "description": "Expand queries using terms from relevant documents"},
+            {"value": "variants", "label": "Query Variants", 
+             "description": "Generate multiple query reformulations"},
+            {"value": "reranking", "label": "Cross-Encoder Reranking", 
+             "description": "Rerank results using advanced models"},
+            {"value": "fusion", "label": "Result Fusion", 
+             "description": "Combine results from multiple queries"}
+        ],
+        "fusion_methods": [
+            {"value": "rrf", "label": "Reciprocal Rank Fusion", 
+             "description": "Combine rankings using reciprocal rank scores"},
+            {"value": "score", "label": "Score-based Fusion", 
+             "description": "Average similarity scores across queries"}
+        ],
+        "parameters": {
+            "prf_iterations": {"min": 1, "max": 3, "default": 1, 
+                             "description": "Number of PRF feedback iterations"},
+            "prf_top_k": {"min": 1, "max": 10, "default": 3, 
+                         "description": "Number of top documents for feedback"},
+            "expansion_terms": {"min": 1, "max": 10, "default": 5, 
+                              "description": "Number of terms to add in expansion"},
+            "variant_count": {"min": 1, "max": 5, "default": 3, 
+                            "description": "Number of query variants to generate"}
+        }
+    }
 
 @app.get("/models")
 async def get_models():
@@ -263,46 +482,72 @@ async def get_models():
         logger.error(f"Error fetching models: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching models: {str(e)}")
 
-@app.get("/quantization-options")
-async def get_quantization_options():
-    return {
-        "options": [
-            {"value": "None", "label": "None (Full Precision)"},
-            {"value": "8bit", "label": "8-bit Quantization"},
-            {"value": "4bit", "label": "4-bit Quantization (Recommended)"},
-            {"value": "1bit", "label": "1-bit Quantization (Fastest, Lower Quality)"}
-        ]
-    }
-
 @app.get("/rag-options")
 async def get_rag_options():
-    return {
-        "options": [
-            {"value": "default", "label": "Default RAG"},
-            {"value": "llama_index", "label": "LlamaIndex RAG (Advanced)"}
-        ]
-    }
+    options = [
+        {"value": "smart", "label": "Smart Universal RAG (Recommended)", 
+         "description": "Intelligent retrieval for all document types"},
+        {"value": "enhanced_traditional", "label": "Enhanced Traditional RAG", 
+         "description": "Improved traditional approach"},
+        {"value": "basic", "label": "Basic RAG", 
+         "description": "Simple semantic similarity search"}
+    ]
+    
+    if QUERY_REWRITING_AVAILABLE:
+        options.insert(0, {
+            "value": "enhanced_with_rewriting", 
+            "label": "Enhanced RAG with Query Rewriting (Best)", 
+            "description": "Advanced retrieval with PRF, variants, and fusion"
+        })
+    
+    return {"options": options}
 
 @app.get("/documents")
 async def get_documents():
     try:
-        # Get LlamaIndex documents
-        llama_index_docs = llama_index_rag.get_document_list()
-        
-        # Get all uploaded documents
         all_docs = os.listdir(UPLOAD_DIR) if os.path.exists(UPLOAD_DIR) else []
+        smart_processed_docs = list(document_processing_results.keys())
+        
+        detailed_docs = []
+        for doc in all_docs:
+            doc_info = {
+                "name": doc,
+                "smart_processed": doc in smart_processed_docs,
+                "query_rewriting_ready": QUERY_REWRITING_AVAILABLE
+            }
+            
+            if doc in document_processing_results:
+                smart_result = document_processing_results[doc]
+                doc_info.update({
+                    "document_type": smart_result.get("document_type", "general"),
+                    "entities_found": smart_result.get("entities_found", 0),
+                    "chunks_created": smart_result.get("chunks_created", 0)
+                })
+            
+            detailed_docs.append(doc_info)
         
         return {
             "all_documents": all_docs,
-            "indexed_documents": llama_index_docs
+            "smart_processed_documents": smart_processed_docs,
+            "detailed_info": detailed_docs,
+            "smart_rag_enabled": True,
+            "query_rewriting_enabled": QUERY_REWRITING_AVAILABLE
         }
     except Exception as e:
         logger.error(f"Error fetching documents: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching documents: {str(e)}")
 
-# Simple evaluation endpoint
-@app.post("/evaluate/basic")
-async def basic_evaluation(request: dict):
+@app.get("/processing-stats")
+async def get_processing_stats():
+    try:
+        stats = get_smart_processing_stats()
+        return {"stats": stats, "query_rewriting_available": QUERY_REWRITING_AVAILABLE}
+    except Exception as e:
+        logger.error(f"Error fetching processing stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.post("/evaluate/enhanced")
+async def enhanced_evaluation(request: dict):
     try:
         document_name = request.get("document")
         if not document_name:
@@ -310,78 +555,167 @@ async def basic_evaluation(request: dict):
             if not document_name:
                 raise HTTPException(status_code=400, detail="No document specified")
                 
-        query = request.get("query")
-        if not query:
-            raise HTTPException(status_code=400, detail="No query provided")
+        query = request.get("query", "What is this document about and who is mentioned?")
+        use_prf = request.get("use_prf", True)
+        use_variants = request.get("use_variants", True)
         
-        # Run query with both systems
-        # 1. Original system
-        original_context = query_index_with_context(query, 5)
-        original_response = stream_llama_cpp_response(
-            query=query, 
-            context=original_context, 
-            model="mamba", 
-            temperature=0.3
-        )
+        evaluation_results = {}
         
-        # 2. LlamaIndex system
-        llama_index_result = llama_index_rag.query(
-            query_text=query,
-            document_name=document_name,
-            top_k=5
-        )
+        # Test enhanced RAG with query rewriting
+        if QUERY_REWRITING_AVAILABLE and enhanced_rag_with_rewriting:
+            start_time = time.time()
+            try:
+                result = enhanced_rag_with_rewriting.query_robust(
+                    query_text=query,
+                    document_name=document_name,
+                    top_k=5,
+                    use_robust_retrieval=True,
+                    use_prf=use_prf,
+                    use_variants=use_variants,
+                    temperature=0.3
+                )
+                
+                evaluation_results["enhanced_with_query_rewriting"] = {
+                    "response": result["response"],
+                    "time_ms": (time.time() - start_time) * 1000,
+                    "success": True,
+                    "entity_matches": result.get("entity_matches", [])
+                }
+            except Exception as e:
+                evaluation_results["enhanced_with_query_rewriting"] = {
+                    "response": f"Failed: {str(e)}",
+                    "time_ms": (time.time() - start_time) * 1000,
+                    "success": False,
+                    "error": str(e)
+                }
         
-        llama_index_response = llama_index_result["response"]
-        if not llama_index_response or len(llama_index_response) < 10:
-            chunks_text = "\n\n".join([f"Document: {chunk}" for chunk, _ in llama_index_result["chunks_retrieved"]])
-            llama_index_response = stream_llama_cpp_response(
-                query=query, 
-                context=chunks_text, 
-                model="mamba", 
-                temperature=0.3
-            )
-            if isinstance(llama_index_response, dict):
-                llama_index_response = llama_index_response["response"]
-        
-        # Save results to evaluation directory
-        eval_result = {
-            "document": document_name,
-            "query": query,
-            "timestamp": str(datetime.datetime.now()),
-            "original": {
-                "response": original_response["response"] if isinstance(original_response, dict) else original_response,
-                "context": original_context
-            },
-            "llama_index": {
-                "response": llama_index_response,
-                "chunks": [(chunk, float(score)) for chunk, score in llama_index_result["chunks_retrieved"]]
+        # Test smart RAG
+        start_time = time.time()
+        try:
+            if smart_rag_pipeline:
+                smart_result = smart_rag_pipeline.query_smart(query, document_name, 5)
+                smart_response = stream_llama_cpp_response(
+                    query=query, context=smart_result["context"], model="mamba", temperature=0.3
+                )
+                
+                evaluation_results["smart_rag"] = {
+                    "response": smart_response["response"] if isinstance(smart_response, dict) else smart_response,
+                    "time_ms": (time.time() - start_time) * 1000,
+                    "success": True,
+                    "entity_info": smart_result.get("entity_info", {})
+                }
+            else:
+                evaluation_results["smart_rag"] = {
+                    "response": "Smart RAG not available",
+                    "time_ms": 0,
+                    "success": False
+                }
+        except Exception as e:
+            evaluation_results["smart_rag"] = {
+                "response": f"Failed: {str(e)}",
+                "time_ms": (time.time() - start_time) * 1000,
+                "success": False
             }
-        }
         
-        # Return evaluation result
+        # Test traditional RAG
+        start_time = time.time()
+        try:
+            context = query_index_with_context(query, 5, use_smart_retrieval=False)
+            response = stream_llama_cpp_response(query=query, context=context, model="mamba", temperature=0.3)
+            
+            evaluation_results["traditional_rag"] = {
+                "response": response["response"] if isinstance(response, dict) else response,
+                "time_ms": (time.time() - start_time) * 1000,
+                "success": True
+            }
+        except Exception as e:
+            evaluation_results["traditional_rag"] = {
+                "response": f"Failed: {str(e)}",
+                "time_ms": (time.time() - start_time) * 1000,
+                "success": False
+            }
+        
         return {
             "success": True,
             "document": document_name,
-            "evaluation": eval_result
+            "query": query,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "evaluation_results": evaluation_results,
+            "query_rewriting_available": QUERY_REWRITING_AVAILABLE
         }
         
     except Exception as e:
-        logger.error(f"Error in basic evaluation: {str(e)}")
+        logger.error(f"Error in enhanced evaluation: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error in evaluation: {str(e)}")
+
+@app.post("/clear-caches")
+async def clear_caches():
+    try:
+        if smart_rag_pipeline and hasattr(smart_rag_pipeline, 'vector_store'):
+            if hasattr(smart_rag_pipeline.vector_store, 'retrieval_cache'):
+                smart_rag_pipeline.vector_store.retrieval_cache.clear()
+        
+        if QUERY_REWRITING_AVAILABLE and enhanced_rag_with_rewriting:
+            try:
+                enhanced_rag_with_rewriting.clear_caches()
+            except:
+                pass
+        
+        return {"success": True, "message": "All caches cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing caches: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error clearing caches: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
     import argparse
-    import datetime
     
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Document Chat Backend with LlamaIndex")
+    parser = argparse.ArgumentParser(description="Smart Document Chat Backend with Universal Retrieval + Query Rewriting")
     parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server to")
     parser.add_argument("--model", type=str, default=MODEL_PATH, help="Path to the LLM model")
+    parser.add_argument("--disable-smart", action="store_true", help="Disable smart processing by default")
+    parser.add_argument("--disable-query-rewriting", action="store_true", help="Disable query rewriting features")
     
     args = parser.parse_args()
     
-    # Start the web server
-    logger.info(f"Starting server on {args.host}:{args.port}")
+    # Set default configurations
+    default_smart_config = SmartProcessingConfig(
+        use_smart_processing=not args.disable_smart,
+        extract_entities=True,
+        create_smart_chunks=True,
+        enable_smart_search=True,
+        auto_detect_document_type=True
+    )
+    app.state.smart_processing_config = default_smart_config.dict()
+    
+    default_query_rewriting_config = QueryRewritingConfig(
+        use_prf=not args.disable_query_rewriting and QUERY_REWRITING_AVAILABLE,
+        use_variants=not args.disable_query_rewriting and QUERY_REWRITING_AVAILABLE,
+        prf_iterations=1,
+        fusion_method="rrf",
+        rerank=True
+    )
+    app.state.query_rewriting_config = default_query_rewriting_config.dict()
+    
+    # Print startup information
+    logger.info(f"🚀 Starting Smart Document Chat Backend on {args.host}:{args.port}")
+    logger.info(f"Smart processing: {'enabled' if not args.disable_smart else 'disabled'}")
+    logger.info(f"Query rewriting: {'enabled' if QUERY_REWRITING_AVAILABLE and not args.disable_query_rewriting else 'disabled'}")
+    
+    logger.info("✅ Available features:")
+    logger.info("  • Universal document type detection")
+    logger.info("  • Multi-strategy entity extraction") 
+    logger.info("  • Intelligent chunking with entity awareness")
+    logger.info("  • Adaptive query processing")
+    logger.info("  • Smart retrieval with priority ranking")
+    
+    if QUERY_REWRITING_AVAILABLE and not args.disable_query_rewriting:
+        logger.info("  • Pseudo Relevance Feedback (PRF)")
+        logger.info("  • Query variants generation")
+        logger.info("  • Reciprocal Rank Fusion (RRF)")
+        logger.info("  • Cross-encoder reranking")
+    
+    logger.info("\n🎯 Ready to solve the 'Whose CV is this?' problem!")
+    
     uvicorn.run(app, host=args.host, port=args.port, workers=1, reload=False)

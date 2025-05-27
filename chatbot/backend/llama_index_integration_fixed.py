@@ -6,6 +6,9 @@ import torch
 from sentence_transformers import SentenceTransformer
 import json
 
+# Import our new query rewriting components
+from query_rewriting import QueryRewriter, EnhancedRAGRetriever
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -91,11 +94,11 @@ class SimpleVectorStore:
         self.metadata = data["metadata"]
 
 
-class LlamaIndexRAG:
-    """A simplified implementation of RAG using SentenceTransformers without LlamaIndex."""
+class EnhancedLlamaIndexRAG:
+    """Enhanced LlamaIndex RAG system with query rewriting capabilities."""
     
     def __init__(self, llm_model_path: str = None):
-        """Initialize the RAG system."""
+        """Initialize the enhanced RAG system."""
         # Set up embedding model
         self.embed_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
         
@@ -105,11 +108,36 @@ class LlamaIndexRAG:
         # Track processed documents
         self.processed_documents = {}
         
+        # Initialize query rewriter
+        self.query_rewriter = QueryRewriter(self.embed_model)
+        
+        # Cache for vector stores and queries
+        self._vector_store_cache = {}
+        self._query_cache = {}
+        
+        # Enhanced retriever will be initialized per document
+        self._enhanced_retrievers = {}
+    
     def _get_index_path(self, document_name: str) -> str:
         """Get storage path for a document index."""
         # Create a safe filename
         safe_name = "".join(c if c.isalnum() else "_" for c in document_name)
         return os.path.join(INDEX_STORAGE_DIR, f"{safe_name}_index.json")
+    
+    def _get_document_hash(self, file_path: str) -> str:
+        """Generate a content hash for document caching."""
+        import hashlib
+        
+        hasher = hashlib.md5()
+        
+        # For large files, hash only the first 10MB
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hasher.update(chunk)
+                if f.tell() > 10 * 1024 * 1024:  # 10MB
+                    break
+        
+        return hasher.hexdigest()
     
     def _extract_text_from_file(self, file_path: str) -> str:
         """Extract text content from a file with optimized performance."""
@@ -130,92 +158,16 @@ class LlamaIndexRAG:
         
         # Extract text based on file type
         if file_path.lower().endswith('.pdf'):
-            # Optimize PDF processing - use a more efficient library
-            try:
-                # Try PyMuPDF first (faster than PyPDF2)
-                import fitz  # PyMuPDF
-                text = ""
-                with fitz.open(file_path) as doc:
-                    # Process in chunks of 10 pages for memory efficiency
-                    total_pages = len(doc)
-                    for i in range(0, total_pages, 10):
-                        page_text = ""
-                        for page_num in range(i, min(i+10, total_pages)):
-                            page = doc.load_page(page_num)
-                            page_text += page.get_text() + "\n\n"
-                        text += page_text
-                        
-                        # Early check for large documents
-                        if len(text) > 1000000:  # ~1MB of text
-                            logger.warning(f"PDF is very large, truncating after page {i+10}")
-                            text += f"\n[Note: PDF truncated after {i+10} pages due to size]"
-                            break
-                
-            except ImportError:
-                # Fall back to original implementation without using super()
-                try:
-                    import PyPDF2
-                    text = ""
-                    with open(file_path, 'rb') as file:
-                        reader = PyPDF2.PdfReader(file)
-                        for page_num in range(len(reader.pages)):
-                            text += reader.pages[page_num].extract_text() + "\n\n"
-                            
-                            # Check if we're exceeding reasonable limits
-                            if len(text) > 1000000:  # ~1MB of text
-                                logger.warning(f"PDF too large, truncating after page {page_num+1}")
-                                text += f"\n[Note: PDF truncated after {page_num+1} pages]"
-                                break
-                except ImportError:
-                    try:
-                        import pdfplumber
-                        with pdfplumber.open(file_path) as pdf:
-                            text = ""
-                            for i, page in enumerate(pdf.pages):
-                                text += page.extract_text() + "\n\n"
-                                
-                                # Check if we're exceeding reasonable limits
-                                if len(text) > 1000000:  # ~1MB of text
-                                    logger.warning(f"PDF too large, truncating after page {i+1}")
-                                    text += f"\n[Note: PDF truncated after {i+1} pages]"
-                                    break
-                    except ImportError:
-                        raise ImportError("PDF extraction libraries not found.")
+            text = self._extract_text_from_pdf(file_path)
         else:
-            # For text files, use a more efficient approach
-            try:
-                # For small text files (< 10MB), read all at once
-                if file_size < 10 * 1024 * 1024:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        text = f.read()
-                else:
-                    # For large text files, read in chunks
-                    text = ""
-                    chunk_size = 1024 * 1024  # 1MB chunks
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        while chunk := f.read(chunk_size):
-                            text += chunk
-                            # Break if we have enough text already
-                            if len(text) > 2 * 1024 * 1024:  # 2MB of text
-                                text += "\n[Note: File truncated due to size]"
-                                break
-            except UnicodeDecodeError:
-                # Try with other encodings
-                for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
-                    try:
-                        with open(file_path, 'r', encoding=encoding) as f:
-                            text = f.read()
-                        break
-                    except UnicodeDecodeError:
-                            continue
-                else:
-                    raise ValueError(f"Could not decode file {file_path} with any encoding")
+            text = self._extract_text_from_txt(file_path)
         
         # Cache the extracted text for future use
         with open(cache_path, 'w', encoding='utf-8') as cache_file:
             cache_file.write(text)
         
         return text
+    
     def _extract_text_from_pdf(self, file_path: str) -> str:
         """Extract text from PDF file."""
         try:
@@ -225,6 +177,10 @@ class LlamaIndexRAG:
                 reader = PyPDF2.PdfReader(file)
                 for page_num in range(len(reader.pages)):
                     text += reader.pages[page_num].extract_text() + "\n\n"
+                    # Limit size to avoid memory issues
+                    if len(text) > 1000000:  # 1MB limit
+                        text += "\n[Note: PDF truncated due to size]"
+                        break
             return text
         except ImportError:
             try:
@@ -233,6 +189,9 @@ class LlamaIndexRAG:
                     text = ""
                     for page in pdf.pages:
                         text += page.extract_text() + "\n\n"
+                        if len(text) > 1000000:  # 1MB limit
+                            text += "\n[Note: PDF truncated due to size]"
+                            break
                 return text
             except ImportError:
                 raise ImportError("PDF extraction libraries not found. Install PyPDF2 or pdfplumber.")
@@ -253,127 +212,6 @@ class LlamaIndexRAG:
     
     def _chunk_text(self, text: str, chunk_size: int = 512, overlap: int = 50) -> List[str]:
         """Split text into chunks with overlap."""
-        # Simple paragraph-based chunking
-        paragraphs = [p for p in text.split("\n\n") if p.strip()]
-        
-        chunks = []
-        current_chunk = ""
-        
-        for para in paragraphs:
-            if len(current_chunk) + len(para) <= chunk_size:
-                # Add to current chunk
-                current_chunk += para + "\n\n"
-            else:
-                # Save current chunk if not empty
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                
-                # Start new chunk, including overlap from previous
-                if overlap > 0 and current_chunk:
-                    # Add last ~overlap characters from previous chunk
-                    words = current_chunk.split()
-                    overlap_text = " ".join(words[-20:]) if len(words) > 20 else current_chunk
-                    current_chunk = overlap_text + "\n\n" + para + "\n\n"
-                else:
-                    current_chunk = para + "\n\n"
-        
-        # Add the last chunk if not empty
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-            
-        return chunks
-    
-    def process_document(self, file_path: str, chunk_size: int = 512, overlap: int = 50) -> List[str]:
-        """Process a document and create an index with optimized performance."""
-        try:
-            # Get document name from path
-            document_name = os.path.basename(file_path)
-            index_path = self._get_index_path(document_name)
-            
-            # Check for existing index to avoid reprocessing
-            if os.path.exists(index_path):
-                logger.info(f"Found existing index for {document_name}, loading instead of reprocessing")
-                vector_store = SimpleVectorStore()
-                vector_store.load(index_path)
-                # Return the document chunks without reprocessing
-                return vector_store.documents
-            
-            # Extract text based on file type
-            if file_path.lower().endswith(('.jpg', '.jpeg', '.png')):
-                logger.info(f"Processing image file: {document_name}")
-                from document_processor_patched import extract_text_from_image
-                document_text = extract_text_from_image(file_path)
-            else:
-                # Use the _extract_text_from_file method
-                document_text = self._extract_text_from_file(file_path)
-            
-            # Split into chunks using the optimized method
-            chunks = self._optimized_chunk_text(document_text, chunk_size, overlap)
-            logger.info(f"Split document into {len(chunks)} chunks")
-            
-            # Create vector store
-            vector_store = SimpleVectorStore()
-            
-            # Create embeddings in batches for better performance
-            batch_size = 16  # Adjust based on available RAM
-            embeddings = []
-            metadata = []
-            
-            # Process in batches
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i:min(i+batch_size, len(chunks))]
-                
-                # Log batch progress
-                logger.info(f"Processing batch {i//batch_size + 1}/{(len(chunks)-1)//batch_size + 1}")
-                
-                # Encode batch of chunks at once (much faster than one by one)
-                batch_embeddings = self.embed_model.encode(batch, show_progress_bar=False)
-                
-                # Add embeddings and metadata
-                for j, embedding in enumerate(batch_embeddings):
-                    chunk_index = i + j
-                    embeddings.append(embedding.tolist())
-                    metadata.append({
-                        "source": document_name,
-                        "chunk_id": chunk_index
-                    })
-            
-            # Add to vector store (all at once)
-            vector_store.add_documents(chunks, embeddings, metadata)
-            
-            # Save vector store
-            vector_store.save(index_path)
-            
-            # Record this document as processed
-            self.processed_documents[document_name] = {
-                "chunks": len(chunks),
-                "path": file_path
-            }
-            
-            logger.info(f"Created index for {document_name} with {len(chunks)} chunks")
-            return chunks
-            
-        except Exception as e:
-            logger.error(f"Error processing document: {str(e)}")
-            raise
-        
-    def _get_document_hash(self, file_path: str) -> str:
-        """Generate a content hash for document caching."""
-        import hashlib
-        
-        hasher = hashlib.md5()
-        
-        # For large files, hash only the first 10MB
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hasher.update(chunk)
-                if f.tell() > 10 * 1024 * 1024:  # 10MB
-                    break
-        
-        return hasher.hexdigest()
-
-    def _optimized_chunk_text(self, text: str, chunk_size: int = 512, overlap: int = 50) -> List[str]:
-        """Optimized version of text chunking for better performance."""
         import re
         
         # Pre-process text to remove excessive whitespace
@@ -383,73 +221,50 @@ class LlamaIndexRAG:
         if len(text) <= chunk_size:
             return [text]
         
-        # Start with paragraph splitting (faster than sentence splitting)
+        # Start with paragraph splitting
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
         
-        # If text is short enough, just return paragraphs
-        if sum(len(p) for p in paragraphs) <= chunk_size * 1.5:
-            return paragraphs
-        
-        # For larger documents, use a more efficient chunking approach
         chunks = []
         current_chunk = ""
         
-        # Process paragraphs
         for para in paragraphs:
-            # If paragraph fits in current chunk, add it
             if len(current_chunk) + len(para) <= chunk_size:
                 current_chunk += "\n\n" + para if current_chunk else para
             else:
-                # If current chunk plus paragraph is too large
                 if current_chunk.strip():
                     chunks.append(current_chunk.strip())
-                    # Keep overlap text for next chunk if needed
+                    # Keep overlap text for next chunk
                     if overlap > 0:
-                        # More efficient way to keep overlap text
                         words = current_chunk.split()
-                        overlap_word_count = min(20, len(words))  # Cap at 20 words
+                        overlap_word_count = min(20, len(words))
                         current_chunk = " ".join(words[-overlap_word_count:])
                     else:
                         current_chunk = ""
                 
                 # If paragraph itself is larger than chunk size, split it
                 if len(para) > chunk_size:
-                    # Split large paragraphs into sentences
                     sentences = re.split(r'(?<=[.!?])\s+', para)
-                    
                     for sentence in sentences:
                         if len(current_chunk) + len(sentence) <= chunk_size:
                             current_chunk += " " + sentence if current_chunk else sentence
                         else:
                             if current_chunk.strip():
                                 chunks.append(current_chunk.strip())
-                                # Keep overlap
-                                if overlap > 0:
-                                    words = current_chunk.split()
-                                    overlap_word_count = min(20, len(words))
-                                    current_chunk = " ".join(words[-overlap_word_count:])
-                                else:
-                                    current_chunk = ""
-                            
-                            # If sentence itself is too large, force split it
-                            if len(sentence) > chunk_size:
-                                # Split by whitespace first
+                                current_chunk = sentence
+                            else:
+                                # Force split very long sentences
                                 words = sentence.split()
                                 temp_chunk = ""
-                                
                                 for word in words:
                                     if len(temp_chunk) + len(word) + 1 <= chunk_size:
                                         temp_chunk += " " + word if temp_chunk else word
                                     else:
-                                        chunks.append(temp_chunk.strip())
+                                        if temp_chunk:
+                                            chunks.append(temp_chunk.strip())
                                         temp_chunk = word
-                                
                                 if temp_chunk:
                                     current_chunk = temp_chunk
-                            else:
-                                current_chunk = sentence
                 else:
-                    # Start a new chunk with this paragraph
                     current_chunk = para
         
         # Add the final chunk
@@ -458,225 +273,170 @@ class LlamaIndexRAG:
         
         return chunks
     
-    def load_index(self, document_name: str) -> bool:
-        """Check if an index exists for a document."""
-        index_path = self._get_index_path(document_name)
-        return os.path.exists(index_path)
-    def _get_document_hash(self, file_path: str) -> str:
-        """Generate a content hash for document caching."""
-        import hashlib
-        
-        hasher = hashlib.md5()
-        
-        # For large files, hash only the first 10MB
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hasher.update(chunk)
-                if f.tell() > 10 * 1024 * 1024:  # 10MB
-                    break
-        
-        return hasher.hexdigest()
-
-    def _extract_text_from_file(self, file_path: str) -> str:
-        """Extract text content from a file with optimized performance."""
-        # Create a cache directory for extracted text
-        cache_dir = os.path.join(INDEX_STORAGE_DIR, "text_cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        
-        # Check file type and size
-        file_size = os.path.getsize(file_path)
-        file_hash = self._get_document_hash(file_path)
-        cache_path = os.path.join(cache_dir, f"{file_hash}.txt")
-        
-        # Check if we have a cached version of the extracted text
-        if os.path.exists(cache_path):
-            logger.info(f"Using cached text extraction for {os.path.basename(file_path)}")
-            with open(cache_path, 'r', encoding='utf-8') as cache_file:
-                return cache_file.read()
-        
-        # Extract text based on file type
-        if file_path.lower().endswith('.pdf'):
-            # Optimize PDF processing - use a more efficient library
-            try:
-                # Try PyMuPDF first (faster than PyPDF2)
-                import fitz  # PyMuPDF
-                text = ""
-                with fitz.open(file_path) as doc:
-                    # Process in chunks of 10 pages for memory efficiency
-                    total_pages = len(doc)
-                    for i in range(0, total_pages, 10):
-                        page_text = ""
-                        for page_num in range(i, min(i+10, total_pages)):
-                            page = doc.load_page(page_num)
-                            page_text += page.get_text() + "\n\n"
-                        text += page_text
-                        
-                        # Early check for large documents
-                        if len(text) > 1000000:  # ~1MB of text
-                            logger.warning(f"PDF is very large, truncating after page {i+10}")
-                            text += f"\n[Note: PDF truncated after {i+10} pages due to size]"
-                            break
-                
-            except ImportError:
-                # Fall back to original methods
-                logger.info(f"Falling back to original methods for {file_path}")
-                text = self._extract_text_from_pdf(file_path)
-        else:
-            # For text files, use a more efficient approach
-            try:
-                # For small text files (< 10MB), read all at once
-                if file_size < 10 * 1024 * 1024:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        text = f.read()
-                else:
-                    # For large text files, read in chunks
-                    text = ""
-                    chunk_size = 1024 * 1024  # 1MB chunks
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        while chunk := f.read(chunk_size):
-                            text += chunk
-                            # Break if we have enough text already
-                            if len(text) > 2 * 1024 * 1024:  # 2MB of text
-                                text += "\n[Note: File truncated due to size]"
-                                break
-            except UnicodeDecodeError:
-                # Try with other encodings
-                for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
-                    try:
-                        with open(file_path, 'r', encoding=encoding) as f:
-                            text = f.read()
-                        break
-                    except UnicodeDecodeError:
-                        continue
-                else:
-                    raise ValueError(f"Could not decode file {file_path} with any encoding")
-        
-        # Cache the extracted text for future use
-        with open(cache_path, 'w', encoding='utf-8') as cache_file:
-            cache_file.write(text)
-        
-        return text
-    
-    def query(self, query_text: str, document_name: str, top_k: int = 5, 
-          temperature: float = 0.3, rerank: bool = True) -> Dict[str, Any]:
-        """
-        Query a document with optimized performance.
-        
-        Args:
-            query_text: The query text
-            document_name: The name of the document to query
-            top_k: Number of chunks to retrieve
-            temperature: Temperature for LLM response generation
-            rerank: Whether to apply reranking to improve relevance
-            
-        Returns:
-            Dictionary with response, chunks retrieved and sources
-        """
-        query_start_time = time.time()
+    def process_document(self, file_path: str, chunk_size: int = 512, overlap: int = 50) -> List[str]:
+        """Process a document and create an index with enhanced capabilities."""
         try:
-            # Initialize cache if not exists
-            if not hasattr(self, '_vector_store_cache'):
-                self._vector_store_cache = {}
-                
-            if not hasattr(self, '_query_cache'):
-                self._query_cache = {}
-                
-            # Check cache for this exact query
-            cache_key = f"{document_name}:{query_text}:{top_k}"
-            if cache_key in self._query_cache:
-                logger.info(f"Using cached query result for {document_name}")
-                return self._query_cache[cache_key]
-                
-            # Get index path
+            # Get document name from path
+            document_name = os.path.basename(file_path)
             index_path = self._get_index_path(document_name)
             
-            # Check if index exists
-            if not os.path.exists(index_path):
-                logger.warning(f"No index found for {document_name}")
-                return {
-                    "response": f"No index found for document: {document_name}",
-                    "chunks_retrieved": [],
-                    "sources": [],
-                    "query_time_ms": 0
-                }
-            
-            # Load vector store from cache or disk
-            load_start = time.time()
-            if document_name in self._vector_store_cache:
-                vector_store = self._vector_store_cache[document_name]
-                logger.info(f"Using cached vector store for {document_name}")
-            else:
+            # Check for existing index
+            if os.path.exists(index_path):
+                logger.info(f"Found existing index for {document_name}, loading instead of reprocessing")
                 vector_store = SimpleVectorStore()
                 vector_store.load(index_path)
-                self._vector_store_cache[document_name] = vector_store
-                logger.info(f"Loaded vector store for {document_name} in {(time.time() - load_start)*1000:.2f}ms")
+                
+                # Initialize enhanced retriever for this document
+                self._enhanced_retrievers[document_name] = EnhancedRAGRetriever(vector_store, self.embed_model)
+                
+                return vector_store.documents
             
-            # Create query embedding
-            embed_start = time.time()
-            query_embedding = self.embed_model.encode(query_text).tolist()
-            logger.info(f"Created query embedding in {(time.time() - embed_start)*1000:.2f}ms")
+            # Extract text based on file type
+            if file_path.lower().endswith(('.jpg', '.jpeg', '.png')):
+                logger.info(f"Processing image file: {document_name}")
+                from document_processor_patched import extract_text_from_image
+                document_text = extract_text_from_image(file_path)
+            else:
+                document_text = self._extract_text_from_file(file_path)
             
-            # Search for similar chunks
-            search_start = time.time()
-            results = vector_store.search(
-                query_embedding=query_embedding,
-                k=top_k * 2 if rerank else top_k,  # Get more results if we'll rerank
-                filter_dict={"source": document_name}
+            # Split into chunks
+            chunks = self._chunk_text(document_text, chunk_size, overlap)
+            logger.info(f"Split document into {len(chunks)} chunks")
+            
+            # Create vector store
+            vector_store = SimpleVectorStore()
+            
+            # Create embeddings in batches
+            batch_size = 16
+            embeddings = []
+            metadata = []
+            
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i:min(i+batch_size, len(chunks))]
+                logger.info(f"Processing batch {i//batch_size + 1}/{(len(chunks)-1)//batch_size + 1}")
+                
+                batch_embeddings = self.embed_model.encode(batch, show_progress_bar=False)
+                
+                for j, embedding in enumerate(batch_embeddings):
+                    chunk_index = i + j
+                    embeddings.append(embedding.tolist())
+                    metadata.append({
+                        "source": document_name,
+                        "chunk_id": chunk_index
+                    })
+            
+            # Add to vector store
+            vector_store.add_documents(chunks, embeddings, metadata)
+            
+            # Save vector store
+            vector_store.save(index_path)
+            
+            # Initialize enhanced retriever for this document
+            self._enhanced_retrievers[document_name] = EnhancedRAGRetriever(vector_store, self.embed_model)
+            
+            # Record this document as processed
+            self.processed_documents[document_name] = {
+                "chunks": len(chunks),
+                "path": file_path
+            }
+            
+            logger.info(f"Created enhanced index for {document_name} with {len(chunks)} chunks")
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Error processing document: {str(e)}")
+            raise
+    
+    def query_with_rewriting(
+        self, 
+        query_text: str, 
+        document_name: str, 
+        top_k: int = 5,
+        temperature: float = 0.3,
+        use_prf: bool = True,
+        use_variants: bool = True,
+        prf_iterations: int = 1,
+        fusion_method: str = "rrf",
+        rerank: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Query a document using advanced query rewriting techniques.
+        
+        Args:
+            query_text: The user's query
+            document_name: Name of the document to query
+            top_k: Number of chunks to retrieve
+            temperature: Temperature for LLM response generation
+            use_prf: Whether to use Pseudo Relevance Feedback
+            use_variants: Whether to generate query variants
+            prf_iterations: Number of PRF iterations
+            fusion_method: Method to fuse results ("rrf" or "score")
+            rerank: Whether to apply reranking
+            
+        Returns:
+            Dictionary with enhanced response and metadata
+        """
+        query_start_time = time.time()
+        
+        try:
+            logger.info(f"Enhanced query with rewriting: {query_text}")
+            
+            # Check if we have an enhanced retriever for this document
+            if document_name not in self._enhanced_retrievers:
+                # Try to load the document index
+                index_path = self._get_index_path(document_name)
+                if os.path.exists(index_path):
+                    vector_store = SimpleVectorStore()
+                    vector_store.load(index_path)
+                    self._enhanced_retrievers[document_name] = EnhancedRAGRetriever(vector_store, self.embed_model)
+                else:
+                    logger.error(f"No index found for document: {document_name}")
+                    return {
+                        "response": f"No index found for document: {document_name}",
+                        "chunks_retrieved": [],
+                        "sources": [],
+                        "query_rewriting": {"original_query": query_text},
+                        "error": "Document not indexed"
+                    }
+            
+            # Get the enhanced retriever for this document
+            retriever = self._enhanced_retrievers[document_name]
+            
+            # Perform enhanced retrieval with query rewriting
+            retrieval_result = retriever.retrieve_with_rewriting(
+                query=query_text,
+                document_name=document_name,
+                top_k=top_k,
+                use_prf=use_prf,
+                use_variants=use_variants,
+                prf_iterations=prf_iterations,
+                fusion_method=fusion_method
             )
-            logger.info(f"Vector search completed in {(time.time() - search_start)*1000:.2f}ms")
             
-            # Rerank results if requested (and if we have enough results)
-            if rerank and len(results) > top_k:
-                rerank_start = time.time()
+            # Extract retrieved documents
+            retrieved_docs = retrieval_result["retrieved_documents"]
+            
+            # Apply reranking if requested
+            if rerank and len(retrieved_docs) > 1:
                 try:
-                    # Import reranker if not already cached
+                    rerank_start = time.time()
                     if not hasattr(self, '_reranker'):
                         from sentence_transformers import CrossEncoder
                         self._reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
                     
                     # Prepare pairs for reranking
-                    pairs = []
-                    for chunk, _, _ in results:
-                        pairs.append((query_text, chunk))
-                    
-                    # Get reranker scores
+                    pairs = [(query_text, doc) for doc, _ in retrieved_docs]
                     rerank_scores = self._reranker.predict(pairs)
                     
-                    # Combine with original results and sort
-                    reranked_results = sorted(zip(results, rerank_scores), 
-                                            key=lambda x: x[1], reverse=True)
+                    # Combine and sort by rerank scores
+                    reranked = sorted(zip(retrieved_docs, rerank_scores), key=lambda x: x[1], reverse=True)
+                    retrieved_docs = [item[0] for item in reranked]
                     
-                    # Take top_k results after reranking
-                    results = [item[0] for item in reranked_results[:top_k]]
                     logger.info(f"Reranked results in {(time.time() - rerank_start)*1000:.2f}ms")
                 except Exception as e:
-                    logger.warning(f"Reranking failed: {e}, using original scores")
-                    # Fallback to top_k of original results
-                    results = results[:top_k]
-            else:
-                # No reranking, just take top_k
-                results = results[:top_k]
+                    logger.warning(f"Reranking failed: {e}, using original order")
             
-            # Extract chunks and scores with better formatting
-            chunks_retrieved = []
-            sources = []
-            
-            for chunk, score, metadata in results:
-                # Format the chunk with its metadata
-                chunk_id = metadata.get("chunk_id", "unknown")
-                source = metadata.get("source", "Unknown")
-                
-                # Add to retrieved chunks with more info
-                chunks_retrieved.append((
-                    chunk,
-                    score,
-                    {"chunk_id": chunk_id, "source": source}
-                ))
-                
-                # Add to sources list
-                sources.append(source)
-            
-            # Generate response with LLM if available
+            # Generate response with LLM
             response = ""
             llm_time_ms = 0
             
@@ -685,13 +445,19 @@ class LlamaIndexRAG:
                 try:
                     from llama_cpp_interface import stream_llama_cpp_response
                     
-                    # Create a more structured context with relevance info
+                    # Create enhanced context with query rewriting information
                     context_parts = []
-                    for i, (chunk, score, _) in enumerate(chunks_retrieved):
-                        # Include chunk with its relevance score and position
-                        context_parts.append(f"[Document {i+1} (Relevance: {score:.2f})]\n{chunk}")
                     
-                    # Join with clear separators
+                    # Add information about query rewriting
+                    rewriting_info = retrieval_result["query_rewriting"]
+                    if len(rewriting_info["all_queries"]) > 1:
+                        context_parts.append(f"[Query Analysis: Original query was expanded to {len(rewriting_info['all_queries'])} variants for better retrieval]")
+                    
+                    # Add retrieved documents with relevance scores
+                    for i, (chunk, score) in enumerate(retrieved_docs):
+                        context_parts.append(f"[Document {i+1} (Relevance: {score:.3f})]\n{chunk}")
+                    
+                    # Create context with clear separators
                     context = "\n\n".join(context_parts)
                     
                     # Generate response
@@ -704,45 +470,89 @@ class LlamaIndexRAG:
                     
                     response = llm_response["response"] if isinstance(llm_response, dict) else llm_response
                     llm_time_ms = (time.time() - llm_start) * 1000
-                    logger.info(f"Generated LLM response in {llm_time_ms:.2f}ms")
+                    
+                    logger.info(f"Generated enhanced response in {llm_time_ms:.2f}ms")
+                    
                 except Exception as e:
                     logger.error(f"Error generating response with LLM: {str(e)}")
                     response = f"Error generating response: {str(e)}"
             
-            # Format chunks for return (without the extra metadata we added)
-            final_chunks = [(chunk, score) for chunk, score, _ in chunks_retrieved]
-            
             # Calculate total query time
             query_time_ms = (time.time() - query_start_time) * 1000
             
-            # Prepare result
+            # Prepare final result
             result = {
                 "response": response,
-                "chunks_retrieved": final_chunks,
-                "sources": sources,
+                "chunks_retrieved": retrieved_docs,
+                "sources": [document_name] * len(retrieved_docs),
+                "query_rewriting": retrieval_result["query_rewriting"],
+                "retrieval_metadata": retrieval_result["metadata"],
+                "individual_results": retrieval_result["individual_results"],
+                "fusion_method": fusion_method,
                 "query_time_ms": query_time_ms,
-                "llm_time_ms": llm_time_ms
+                "llm_time_ms": llm_time_ms,
+                "techniques_used": {
+                    "prf": use_prf,
+                    "variants": use_variants,
+                    "reranking": rerank,
+                    "fusion": fusion_method
+                }
             }
-            
-            # Cache the result
-            self._query_cache[cache_key] = result
             
             return result
             
         except Exception as e:
             query_time_ms = (time.time() - query_start_time) * 1000
-            logger.error(f"Error querying document: {str(e)}")
+            logger.error(f"Error in enhanced query: {str(e)}")
             return {
                 "response": f"Error processing your query: {str(e)}",
                 "chunks_retrieved": [],
                 "sources": [],
+                "query_rewriting": {"original_query": query_text, "error": str(e)},
                 "query_time_ms": query_time_ms,
                 "error": str(e)
             }
+    
+    def query(self, query_text: str, document_name: str, top_k: int = 5, temperature: float = 0.3, **kwargs) -> Dict[str, Any]:
+        """
+        Backward compatible query method that uses enhanced querying by default.
+        """
+        # Extract enhancement parameters from kwargs
+        use_prf = kwargs.get('use_prf', True)
+        use_variants = kwargs.get('use_variants', True)
+        prf_iterations = kwargs.get('prf_iterations', 1)
+        fusion_method = kwargs.get('fusion_method', 'rrf')
+        rerank = kwargs.get('rerank', True)
+        
+        # Use enhanced query method
+        enhanced_result = self.query_with_rewriting(
+            query_text=query_text,
+            document_name=document_name,
+            top_k=top_k,
+            temperature=temperature,
+            use_prf=use_prf,
+            use_variants=use_variants,
+            prf_iterations=prf_iterations,
+            fusion_method=fusion_method,
+            rerank=rerank
+        )
+        
+        # Return in the expected format for backward compatibility
+        return {
+            "response": enhanced_result["response"],
+            "chunks_retrieved": enhanced_result["chunks_retrieved"],
+            "sources": enhanced_result["sources"],
+            "query_time_ms": enhanced_result.get("query_time_ms", 0),
+            "enhancement_metadata": {
+                "query_rewriting": enhanced_result.get("query_rewriting", {}),
+                "techniques_used": enhanced_result.get("techniques_used", {}),
+                "retrieval_metadata": enhanced_result.get("retrieval_metadata", {})
+            }
+        }
+    
     def get_document_list(self) -> List[str]:
         """Get list of documents that have indices."""
         try:
-            # Check all JSON files in the index directory
             document_names = []
             
             if os.path.exists(INDEX_STORAGE_DIR):
@@ -755,3 +565,41 @@ class LlamaIndexRAG:
         except Exception as e:
             logger.error(f"Error listing document indices: {str(e)}")
             return []
+    
+    def get_query_rewriting_stats(self, document_name: str = None) -> Dict[str, Any]:
+        """Get statistics about query rewriting performance."""
+        try:
+            stats = {
+                "total_documents": len(self.processed_documents),
+                "enhanced_retrievers": len(self._enhanced_retrievers),
+                "cache_sizes": {
+                    "vector_stores": len(self._vector_store_cache),
+                    "queries": len(self._query_cache)
+                }
+            }
+            
+            if document_name and document_name in self.processed_documents:
+                doc_info = self.processed_documents[document_name]
+                stats["document_info"] = {
+                    "chunks": doc_info["chunks"],
+                    "path": doc_info["path"],
+                    "has_enhanced_retriever": document_name in self._enhanced_retrievers
+                }
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error getting query rewriting stats: {str(e)}")
+            return {"error": str(e)}
+    
+    def clear_caches(self):
+        """Clear all caches to free memory."""
+        self._vector_store_cache.clear()
+        self._query_cache.clear()
+        
+        # Clear caches in enhanced retrievers
+        for retriever in self._enhanced_retrievers.values():
+            if hasattr(retriever, 'retrieval_cache'):
+                retriever.retrieval_cache.clear()
+        
+        logger.info("Cleared all caches")
