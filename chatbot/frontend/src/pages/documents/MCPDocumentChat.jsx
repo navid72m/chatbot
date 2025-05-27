@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getBackendURL } from '@/api/baseURL';
 import { useNavigate } from 'react-router-dom';
 
-// MCPDocumentChat component with enhanced styling but same functionality
+// Enhanced MCPDocumentChat component with query rewriting features
 const MCPDocumentChat = ({ 
   onError = () => {}
 }) => {
@@ -34,22 +34,42 @@ const MCPDocumentChat = ({
   const [evaluating, setEvaluating] = useState(false);
   const [evaluationError, setEvaluationError] = useState(null);
   
-  // Options state
+  // Enhanced options state with query rewriting
   const [advancedOptions, setAdvancedOptions] = useState({
     use_advanced_rag: true,
     use_llama_index: true,
     model: "mixtral-8x7b-instruct-v0.1.Q4_K_M",
     temperature: 0.3,
     context_window: 5,
-    quantization: "4bit"
+    quantization: "4bit",
+    // New query rewriting options
+    use_prf: true,
+    use_variants: true,
+    prf_iterations: 1,
+    fusion_method: "rrf",
+    rerank: true
   });
+  
   const [showOptions, setShowOptions] = useState(false);
+  const [showQueryRewritingOptions, setShowQueryRewritingOptions] = useState(false);
   const [availableModels, setAvailableModels] = useState(["mixtral-8x7b-instruct-v0.1.Q4_K_M"]);
   const [suggestedQuestions, setSuggestedQuestions] = useState([]);
   const [ragOptions, setRagOptions] = useState([
     { value: "default", label: "Default RAG" },
-    { value: "llama_index", label: "LlamaIndex RAG (Advanced)" }
+    { value: "enhanced", label: "Enhanced RAG with Query Rewriting" },
+    { value: "llama_index", label: "LlamaIndex RAG (Legacy)" }
   ]);
+  
+  // Query rewriting configuration state
+  const [queryRewritingOptions, setQueryRewritingOptions] = useState({
+    techniques: [],
+    fusion_methods: [],
+    parameters: {}
+  });
+  
+  // Query rewriting stats
+  const [queryStats, setQueryStats] = useState(null);
+  const [showStats, setShowStats] = useState(false);
 
   // Check server connection on component mount
   useEffect(() => {
@@ -66,6 +86,7 @@ const MCPDocumentChat = ({
       setConnected(true);
       fetchAvailableModels();
       fetchRagOptions();
+      fetchQueryRewritingOptions();
     } catch (error) {
       console.error('Server connection error:', error);
       setConnected(false);
@@ -93,6 +114,51 @@ const MCPDocumentChat = ({
       }
     } catch (error) {
       console.error('Error fetching RAG options:', error);
+    }
+  };
+  
+  // Fetch query rewriting options
+  const fetchQueryRewritingOptions = async () => {
+    try {
+      const response = await axios.get(`${getBackendURL()}/query-rewriting-options`);
+      if (response.data) {
+        setQueryRewritingOptions(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching query rewriting options:', error);
+    }
+  };
+  
+  // Fetch query rewriting stats
+  const fetchQueryStats = async () => {
+    if (!uploadResult) return;
+    
+    try {
+      const response = await axios.get(`${getBackendURL()}/query-rewriting-stats?document=${uploadResult.filename}`);
+      if (response.data && response.data.stats) {
+        setQueryStats(response.data.stats);
+      }
+    } catch (error) {
+      console.error('Error fetching query stats:', error);
+    }
+  };
+  
+  // Clear caches
+  const clearCaches = async () => {
+    try {
+      await axios.post(`${getBackendURL()}/clear-caches`);
+      // Show success message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: uuidv4(),
+          role: 'system',
+          content: 'Caches cleared successfully. This may improve performance for new queries.',
+          timestamp: new Date().toISOString()
+        }
+      ]);
+    } catch (error) {
+      console.error('Error clearing caches:', error);
     }
   };
   
@@ -149,7 +215,7 @@ const MCPDocumentChat = ({
           );
           setUploadProgress(percentCompleted);
         },
-        timeout: 30000000 // 30 second timeout
+        timeout: 300000 // 5 minute timeout
       });
       
       // Ensure we have a valid upload result
@@ -183,6 +249,7 @@ const MCPDocumentChat = ({
       } catch (err) {
         console.warn('Error setting document:', err);
       }
+      
       try {
         const res = await axios.get(`${getBackendURL()}/suggestions?document=${documentInfo.filename}`);
         setSuggestedQuestions(res.data.questions || []);
@@ -190,13 +257,22 @@ const MCPDocumentChat = ({
         console.warn("Couldn't fetch suggested questions:", err);
       }
       
+      // Fetch initial stats
+      fetchQueryStats();
       
-      // Add welcome message
+      // Add welcome message with enhancement info
+      const enhancementFeatures = [];
+      if (advancedOptions.use_prf) enhancementFeatures.push('Pseudo Relevance Feedback');
+      if (advancedOptions.use_variants) enhancementFeatures.push('Query Variants');
+      if (advancedOptions.rerank) enhancementFeatures.push('Cross-Encoder Reranking');
+      
+      const welcomeMessage = `Document "${documentInfo.filename}" uploaded successfully with enhanced RAG capabilities.${enhancementFeatures.length > 0 ? `\n\nActive enhancements: ${enhancementFeatures.join(', ')}` : ''}\n\nYou can now ask questions about it.`;
+      
       setMessages([
         {
           id: uuidv4(),
           role: 'system',
-          content: `Document "${documentInfo.filename}" uploaded successfully. You can now ask questions about it.`,
+          content: welcomeMessage,
           timestamp: new Date().toISOString()
         }
       ]);
@@ -222,12 +298,47 @@ const MCPDocumentChat = ({
     setInput(e.target.value);
   };
   
-  // Format response for display
-  const formatResponseForDisplay = (text, sources) => {
+  // Format response for display with enhanced information
+  const formatResponseForDisplay = (text, sources, queryRewritingInfo) => {
     if (!text) return "No response received.";
     
     // Clean up bullet points for consistency
     let formattedText = text.replace(/^\s*-\s+/gm, "• ");
+    
+    // Add query rewriting information if available
+    if (queryRewritingInfo && queryRewritingInfo.all_queries && queryRewritingInfo.all_queries.length > 1) {
+      const rewritingDetails = [];
+      
+      if (queryRewritingInfo.techniques_used) {
+        const techniques = Object.entries(queryRewritingInfo.techniques_used)
+          .filter(([key, value]) => value)
+          .map(([key, value]) => {
+            switch(key) {
+              case 'prf': return 'Pseudo Relevance Feedback';
+              case 'variants': return 'Query Variants';
+              case 'reranking': return 'Cross-Encoder Reranking';
+              case 'fusion': return `Result Fusion (${value})`;
+              default: return key;
+            }
+          });
+        
+        if (techniques.length > 0) {
+          rewritingDetails.push(`🔍 Enhanced with: ${techniques.join(', ')}`);
+        }
+      }
+      
+      if (queryRewritingInfo.all_queries.length > 1) {
+        rewritingDetails.push(`📝 Generated ${queryRewritingInfo.all_queries.length} query variants`);
+      }
+      
+      if (queryRewritingInfo.query_time_ms) {
+        rewritingDetails.push(`⚡ Query time: ${Math.round(queryRewritingInfo.query_time_ms)}ms`);
+      }
+      
+      if (rewritingDetails.length > 0) {
+        formattedText = `${formattedText}\n\n${rewritingDetails.join('\n')}`;
+      }
+    }
     
     // Add sources if available
     if (sources && sources.length > 0) {
@@ -267,7 +378,7 @@ const MCPDocumentChat = ({
     scrollToBottom();
   }, [messages]);
 
-  // Handle RAG evaluation
+  // Handle enhanced RAG evaluation
   const handleEvaluateRAG = async () => {
     if (!uploadResult) {
       setEvaluationError('Please upload a document first');
@@ -284,50 +395,58 @@ const MCPDocumentChat = ({
         {
           id: uuidv4(),
           role: 'system',
-          content: `Starting RAG evaluation for "${uploadResult.filename}"...`,
+          content: `Starting enhanced RAG evaluation for "${uploadResult.filename}" with query rewriting techniques...`,
           timestamp: new Date().toISOString()
         }
       ]);
       
-      // Instead of checking for existing datasets, directly create one
-      try {
-        // Create a new evaluation dataset using your /evaluate/basic endpoint
-        const response = await axios.post(`${getBackendURL()}/evaluate/basic`, {
-          document: uploadResult.filename,
-          query: "What is the main topic of this document?" // Sample query for evaluation
-        });
+      // Use the enhanced evaluation endpoint
+      const response = await axios.post(`${getBackendURL()}/evaluate/enhanced`, {
+        document: uploadResult.filename,
+        query: "What are the main topics and key information in this document?",
+        use_prf: advancedOptions.use_prf,
+        use_variants: advancedOptions.use_variants,
+        prf_iterations: advancedOptions.prf_iterations
+      });
+      
+      if (response.data && response.data.evaluation) {
+        const evaluation = response.data.evaluation;
+        const summary = response.data.summary;
         
-        if (response.data && response.data.evaluation) {
-          // Add success message with results
-          setMessages(prev => [
-            ...prev,
-            {
-              id: uuidv4(),
-              role: 'system',
-              content: `Evaluation complete! Original RAG and LlamaIndex RAG have been compared on a sample query.`,
-              timestamp: new Date().toISOString()
-            }
-          ]);
-          
-          // You can optionally add specific result details
-          const evalResult = response.data.evaluation;
-          setMessages(prev => [
-            ...prev,
-            {
-              id: uuidv4(),
-              role: 'system',
-              content: `Results:\n\nOriginal RAG: "${evalResult.original.response.slice(0, 150)}..."\n\nLlamaIndex RAG: "${evalResult.llama_index.response.slice(0, 150)}..."`,
-              timestamp: new Date().toISOString()
-            }
-          ]);
-        }
-      } catch (err) {
-        console.error('Error running basic evaluation:', err);
-        throw new Error('Failed to evaluate RAG systems');
+        // Add detailed results
+        const resultsMessage = `
+📊 **Enhanced RAG Evaluation Results**
+
+**Query Expansion**: ${summary.query_expansion ? '✅ Applied' : '❌ Not applied'}
+**Techniques Used**: ${summary.techniques_applied.join(', ') || 'None'}
+
+**Performance Comparison**:
+• Enhanced with rewriting: ${evaluation.enhanced_with_rewriting.query_time_ms}ms
+• Enhanced without rewriting: ${evaluation.enhanced_without_rewriting.query_time_ms}ms
+• Original system: Basic retrieval
+
+**Response Quality**:
+The enhanced system with query rewriting generated more comprehensive responses by analyzing ${evaluation.enhanced_with_rewriting.query_rewriting.all_queries.length} query variants.
+
+🎯 **Recommendation**: ${summary.query_expansion ? 'Query rewriting is providing enhanced results for your documents.' : 'Consider enabling query rewriting features for better results.'}
+        `.trim();
+        
+        setMessages(prev => [
+          ...prev,
+          {
+            id: uuidv4(),
+            role: 'system',
+            content: resultsMessage,
+            timestamp: new Date().toISOString()
+          }
+        ]);
+        
+        // Update stats
+        fetchQueryStats();
       }
     } catch (err) {
-      console.error('Error initiating evaluation:', err);
-      setEvaluationError('Failed to start evaluation. Check console for details.');
+      console.error('Error running enhanced evaluation:', err);
+      setEvaluationError('Failed to run enhanced evaluation. Check console for details.');
       
       // Add error message
       setMessages(prev => [
@@ -335,7 +454,7 @@ const MCPDocumentChat = ({
         {
           id: uuidv4(),
           role: 'system',
-          content: `Error running evaluation: ${err.response?.data?.detail || err.message || 'Unknown error'}`,
+          content: `Error running enhanced evaluation: ${err.response?.data?.detail || err.message || 'Unknown error'}`,
           isError: true,
           timestamp: new Date().toISOString()
         }
@@ -345,7 +464,7 @@ const MCPDocumentChat = ({
     }
   };
 
-  // Handle submit
+  // Handle submit with enhanced query rewriting
   const handleSubmit = async () => {
     if (!input.trim() || loading || !uploadResult || !connected) {
       return;
@@ -364,11 +483,12 @@ const MCPDocumentChat = ({
       timestamp: new Date().toISOString()
     };
     
-    // Add thinking message
+    // Add enhanced thinking message
     const thinkingMessage = {
       id: uuidv4(),
       role: 'assistant',
-      content: 'Thinking...',
+      content: advancedOptions.use_prf || advancedOptions.use_variants ? 
+        '🔍 Analyzing query and generating variants...' : 'Thinking...',
       isThinking: true,
       timestamp: new Date().toISOString()
     };
@@ -385,7 +505,7 @@ const MCPDocumentChat = ({
         // Ignore errors
       }
       
-      // Send query - simplified options
+      // Send query with enhanced options
       const response = await axios.post(`${getBackendURL()}/query-sync`, {
         query: currentInput,
         document: uploadResult.filename,
@@ -394,9 +514,15 @@ const MCPDocumentChat = ({
         context_window: advancedOptions.context_window,
         quantization: advancedOptions.quantization,
         use_advanced_rag: advancedOptions.use_advanced_rag,
-        use_llama_index: advancedOptions.use_llama_index
+        use_llama_index: advancedOptions.use_llama_index,
+        // Enhanced query rewriting parameters
+        use_prf: advancedOptions.use_prf,
+        use_variants: advancedOptions.use_variants,
+        prf_iterations: advancedOptions.prf_iterations,
+        fusion_method: advancedOptions.fusion_method,
+        rerank: advancedOptions.rerank
       }, {
-        timeout: 30000000 // 30 second timeout
+        timeout: 300000 // 5 minute timeout
       });
       
       // Remove thinking message
@@ -406,10 +532,11 @@ const MCPDocumentChat = ({
         throw new Error('Invalid response from server');
       }
       
-      // Format and add assistant response
+      // Format and add assistant response with enhanced information
       const formattedResponse = formatResponseForDisplay(
         response.data.response, 
-        response.data.sources
+        response.data.sources,
+        response.data.query_rewriting_info
       );
       
       const assistantMessage = {
@@ -418,10 +545,15 @@ const MCPDocumentChat = ({
         content: formattedResponse,
         rawSources: response.data.sources || [],
         system: response.data.system || 'default',
+        queryRewritingInfo: response.data.query_rewriting_info,
+        enhancementStats: response.data.enhancement_stats,
         timestamp: new Date().toISOString()
       };
       
       setMessages(prev => [...prev.filter(msg => !msg.isThinking), assistantMessage]);
+      
+      // Update stats after query
+      fetchQueryStats();
       
     } catch (error) {
       console.error('Query error:', error);
@@ -429,7 +561,7 @@ const MCPDocumentChat = ({
       // Remove thinking message
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessage.id));
       
-      // Add simple error message
+      // Add error message
       const errorMessage = {
         id: uuidv4(),
         role: 'system',
@@ -456,14 +588,21 @@ const MCPDocumentChat = ({
   return (
     <div className="document-upload-page">
       <header className="page-header">
-        <h1>Document Chat</h1>
-        <p>Upload documents and chat with them</p>
+        <h1>Enhanced Document Chat</h1>
+        <p>Upload documents and chat with advanced query rewriting capabilities</p>
       </header>
       
       {/* Connection Status */}
       <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
         <span className="status-indicator"></span>
         <span>{connected ? 'Connected' : 'Disconnected'}</span>
+        {connected && serverInfo?.features && (
+          <div className="server-features">
+            <span className="feature-badge">🔍 Enhanced RAG</span>
+            <span className="feature-badge">🔄 Query Rewriting</span>
+            <span className="feature-badge">🎯 PRF</span>
+          </div>
+        )}
       </div>
       
       <div className="upload-container">
@@ -531,8 +670,39 @@ const MCPDocumentChat = ({
                         className="checkbox-input"
                       />
                       <div className="checkbox-text">
-                        <span>Use LlamaIndex RAG</span>
-                        <span className="checkbox-description">Better retrieval for complex documents</span>
+                        <span>Use Enhanced RAG</span>
+                        <span className="checkbox-description">Advanced retrieval with query rewriting</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Query Rewriting Settings */}
+            <div className="settings-panel">
+              <button 
+                className="settings-toggle"
+                onClick={() => setShowQueryRewritingOptions(!showQueryRewritingOptions)}
+              >
+                <span>🔍 Query Rewriting</span>
+                <span className={`toggle-icon ${showQueryRewritingOptions ? 'open' : ''}`}>▼</span>
+              </button>
+              
+              {showQueryRewritingOptions && (
+                <div className="settings-content">
+                  <div className="checkbox-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        name="use_prf"
+                        checked={advancedOptions.use_prf}
+                        onChange={handleOptionChange}
+                        className="checkbox-input"
+                      />
+                      <div className="checkbox-text">
+                        <span>Pseudo Relevance Feedback</span>
+                        <span className="checkbox-description">Expand queries using document terms</span>
                       </div>
                     </label>
                   </div>
@@ -541,16 +711,60 @@ const MCPDocumentChat = ({
                     <label className="checkbox-label">
                       <input
                         type="checkbox"
-                        name="use_advanced_rag"
-                        checked={advancedOptions.use_advanced_rag}
+                        name="use_variants"
+                        checked={advancedOptions.use_variants}
                         onChange={handleOptionChange}
                         className="checkbox-input"
                       />
                       <div className="checkbox-text">
-                        <span>Use Advanced RAG</span>
-                        <span className="checkbox-description">Enhanced semantic understanding</span>
+                        <span>Query Variants</span>
+                        <span className="checkbox-description">Generate multiple query reformulations</span>
                       </div>
                     </label>
+                  </div>
+
+                  <div className="checkbox-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        name="rerank"
+                        checked={advancedOptions.rerank}
+                        onChange={handleOptionChange}
+                        className="checkbox-input"
+                      />
+                      <div className="checkbox-text">
+                        <span>Cross-Encoder Reranking</span>
+                        <span className="checkbox-description">Advanced relevance scoring</span>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="setting-group">
+                    <label>PRF Iterations:</label>
+                    <select
+                      name="prf_iterations"
+                      value={advancedOptions.prf_iterations}
+                      onChange={handleOptionChange}
+                      className="select-input"
+                      disabled={!advancedOptions.use_prf}
+                    >
+                      <option value={1}>1 iteration</option>
+                      <option value={2}>2 iterations</option>
+                      <option value={3}>3 iterations</option>
+                    </select>
+                  </div>
+
+                  <div className="setting-group">
+                    <label>Fusion Method:</label>
+                    <select
+                      name="fusion_method"
+                      value={advancedOptions.fusion_method}
+                      onChange={handleOptionChange}
+                      className="select-input"
+                    >
+                      <option value="rrf">Reciprocal Rank Fusion</option>
+                      <option value="score">Score-based Fusion</option>
+                    </select>
                   </div>
                 </div>
               )}
@@ -635,6 +849,17 @@ const MCPDocumentChat = ({
                   <span className="info-value">{uploadResult.chunks}</span>
                 </div>
                 
+                {/* Enhancement status */}
+                <div className="enhancement-status">
+                  <h4>Active Enhancements:</h4>
+                  <div className="enhancement-badges">
+                    {advancedOptions.use_prf && <span className="enhancement-badge prf">PRF</span>}
+                    {advancedOptions.use_variants && <span className="enhancement-badge variants">Variants</span>}
+                    {advancedOptions.rerank && <span className="enhancement-badge rerank">Reranking</span>}
+                    {advancedOptions.fusion_method === 'rrf' && <span className="enhancement-badge fusion">RRF</span>}
+                  </div>
+                </div>
+                
                 {uploadResult.preview && (
                   <details className="document-preview">
                     <summary>Document Preview</summary>
@@ -647,15 +872,72 @@ const MCPDocumentChat = ({
             </div>
           )}
 
-          {/* RAG Evaluation Button */}
+          {/* Query Statistics Card */}
+          {uploadResult && queryStats && (
+            <div className="stats-card">
+              <div className="card-header stats">
+                <h2>Query Statistics</h2>
+                <button 
+                  className="stats-toggle"
+                  onClick={() => setShowStats(!showStats)}
+                >
+                  {showStats ? '▼' : '▶'}
+                </button>
+              </div>
+              
+              {showStats && (
+                <div className="stats-content">
+                  <div className="stat-item">
+                    <span className="stat-label">Total Documents:</span>
+                    <span className="stat-value">{queryStats.total_documents}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Enhanced Retrievers:</span>
+                    <span className="stat-value">{queryStats.enhanced_retrievers}</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Cache Status:</span>
+                    <span className="stat-value">
+                      {queryStats.cache_sizes.queries} queries cached
+                    </span>
+                  </div>
+                  
+                  <button 
+                    onClick={clearCaches}
+                    className="clear-cache-button"
+                    disabled={!connected}
+                  >
+                    🗑️ Clear Caches
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Enhanced RAG Evaluation Button */}
           {uploadResult && (
             <div className="evaluation-card">
               <div className="card-header purple">
-                <h2>RAG Evaluation</h2>
+                <h2>Enhanced RAG Evaluation</h2>
               </div>
               
               <div className="evaluation-content">
-                <p>Compare the performance of different RAG systems on this document.</p>
+                <p>Compare performance of different RAG approaches including query rewriting techniques.</p>
+                
+                <div className="evaluation-features">
+                  <div className="feature-item">
+                    <span className="feature-icon">🔍</span>
+                    <span>Query expansion analysis</span>
+                  </div>
+                  <div className="feature-item">
+                    <span className="feature-icon">⚡</span>
+                    <span>Performance benchmarking</span>
+                  </div>
+                  <div className="feature-item">
+                    <span className="feature-icon">📊</span>
+                    <span>Technique comparison</span>
+                  </div>
+                </div>
                 
                 {evaluationError && (
                   <div className="error-message">
@@ -669,7 +951,7 @@ const MCPDocumentChat = ({
                   disabled={evaluating || !connected || !uploadResult}
                   className={`evaluate-button ${(evaluating || !connected || !uploadResult) ? 'disabled' : ''}`}
                 >
-                  {evaluating ? 'Evaluating...' : '📊 Evaluate RAG Systems'}
+                  {evaluating ? 'Evaluating...' : '📊 Run Enhanced Evaluation'}
                 </button>
               </div>
             </div>
@@ -680,13 +962,34 @@ const MCPDocumentChat = ({
         <div className="chat-container">
           <div className="chat-header">
             <div className="chat-title">
-              <h2>Document Chat</h2>
+              <h2>Enhanced Document Chat</h2>
               <p>
                 {uploadResult 
                   ? `Ask questions about: ${uploadResult.filename}` 
                   : 'Upload a document to start chatting'}
               </p>
             </div>
+            
+            {/* Enhancement indicators */}
+            {uploadResult && (
+              <div className="enhancement-indicators">
+                {advancedOptions.use_prf && (
+                  <div className="enhancement-indicator prf" title="Pseudo Relevance Feedback enabled">
+                    🔍 PRF
+                  </div>
+                )}
+                {advancedOptions.use_variants && (
+                  <div className="enhancement-indicator variants" title="Query variants enabled">
+                    📝 Variants
+                  </div>
+                )}
+                {advancedOptions.rerank && (
+                  <div className="enhancement-indicator rerank" title="Cross-encoder reranking enabled">
+                    🎯 Reranking
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           
           <div className="messages-container">
@@ -694,37 +997,121 @@ const MCPDocumentChat = ({
               <div className="empty-state">
                 <div className="empty-icon disconnected">🔄</div>
                 <h3>Connecting to Server...</h3>
-                <p>Please wait while we establish connection to the server.</p>
+                <p>Please wait while we establish connection to the enhanced RAG server.</p>
               </div>
             ) : !uploadResult ? (
               <div className="empty-state">
                 <div className="empty-icon">📄</div>
                 <h3>No Document Uploaded</h3>
-                <p>Upload a document using the panel on the left to start asking questions about it.</p>
+                <p>Upload a document using the panel on the left to start asking questions with enhanced RAG capabilities.</p>
+                
+                <div className="enhancement-preview">
+                  <h4>Available Enhancements:</h4>
+                  <ul>
+                    <li>🔍 <strong>Pseudo Relevance Feedback</strong> - Expands queries using document terms</li>
+                    <li>📝 <strong>Query Variants</strong> - Generates multiple query reformulations</li>
+                    <li>🎯 <strong>Cross-Encoder Reranking</strong> - Advanced relevance scoring</li>
+                    <li>🔄 <strong>Result Fusion</strong> - Intelligently combines multiple query results</li>
+                  </ul>
+                </div>
               </div>
             ) : messages.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">💬</div>
-                <h3>Start the Conversation</h3>
-                <p>Your document is ready. Type a question below to start chatting about its contents.</p>
+                <h3>Start the Enhanced Conversation</h3>
+                <p>Your document is ready with enhanced RAG capabilities. Type a question below to experience improved retrieval quality.</p>
+                
+                {/* Show active enhancements */}
+                <div className="active-enhancements">
+                  <h4>Active Enhancements:</h4>
+                  <div className="enhancement-list">
+                    {advancedOptions.use_prf && (
+                      <div className="enhancement-item">
+                        <span className="enhancement-icon">🔍</span>
+                        <span>Pseudo Relevance Feedback ({advancedOptions.prf_iterations} iteration{advancedOptions.prf_iterations > 1 ? 's' : ''})</span>
+                      </div>
+                    )}
+                    {advancedOptions.use_variants && (
+                      <div className="enhancement-item">
+                        <span className="enhancement-icon">📝</span>
+                        <span>Query Variants Generation</span>
+                      </div>
+                    )}
+                    {advancedOptions.rerank && (
+                      <div className="enhancement-item">
+                        <span className="enhancement-icon">🎯</span>
+                        <span>Cross-Encoder Reranking</span>
+                      </div>
+                    )}
+                    <div className="enhancement-item">
+                      <span className="enhancement-icon">🔄</span>
+                      <span>{advancedOptions.fusion_method.toUpperCase()} Result Fusion</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="messages-list">
                 {messages.map(message => (
                   <div 
                     key={message.id} 
-                    className={`message ${message.role} ${message.isThinking ? 'thinking' : ''} ${message.isError ? 'error' : ''} ${message.system === 'llama_index' ? 'llama-index' : ''}`}
+                    className={`message ${message.role} ${message.isThinking ? 'thinking' : ''} ${message.isError ? 'error' : ''} ${message.system === 'enhanced_llama_index' ? 'enhanced' : ''}`}
                   >
                     <div className="message-content">
                       {message.content}
                     </div>
                     
+                    {/* Enhanced message details */}
+                    {message.queryRewritingInfo && message.queryRewritingInfo.all_queries && message.queryRewritingInfo.all_queries.length > 1 && (
+                      <details className="query-details">
+                        <summary>Query Enhancement Details</summary>
+                        <div className="query-expansion-info">
+                          <div className="expansion-item">
+                            <strong>Original Query:</strong>
+                            <span>{message.queryRewritingInfo.original_query}</span>
+                          </div>
+                          <div className="expansion-item">
+                            <strong>Generated Queries ({message.queryRewritingInfo.all_queries.length}):</strong>
+                            <ul>
+                              {message.queryRewritingInfo.all_queries.map((query, idx) => (
+                                <li key={idx} className={idx === 0 ? 'original' : 'variant'}>
+                                  {query} {idx === 0 ? '(original)' : `(variant ${idx})`}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          {message.queryRewritingInfo.techniques_used && (
+                            <div className="expansion-item">
+                              <strong>Applied Techniques:</strong>
+                              <div className="technique-badges">
+                                {Object.entries(message.queryRewritingInfo.techniques_used)
+                                  .filter(([key, value]) => value)
+                                  .map(([key, value]) => (
+                                    <span key={key} className={`technique-badge ${key}`}>
+                                      {key === 'prf' ? 'PRF' : 
+                                       key === 'variants' ? 'Variants' : 
+                                       key === 'reranking' ? 'Reranking' : 
+                                       key === 'fusion' ? `Fusion (${value})` : key}
+                                    </span>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                    )}
+                    
                     <div className="message-footer">
                       <span className="message-time">
                         {new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </span>
-                      {message.system === 'llama_index' && (
-                        <span className="model-badge">LlamaIndex</span>
+                      {message.system === 'enhanced_llama_index' && (
+                        <span className="model-badge enhanced">Enhanced RAG</span>
+                      )}
+                      {message.queryRewritingInfo && message.queryRewritingInfo.query_time_ms && (
+                        <span className="performance-badge">
+                          ⚡ {Math.round(message.queryRewritingInfo.query_time_ms)}ms
+                        </span>
                       )}
                     </div>
                   </div>
@@ -734,56 +1121,93 @@ const MCPDocumentChat = ({
             )}
           </div>
           
-          {/* Suggested questions */}
+          {/* Enhanced suggested questions */}
           {suggestedQuestions.length > 0 && showSuggestions && (
-  <div className="suggested-questions-container">
-    <div className="suggested-questions-header">
-      <span className="suggested-questions-title">Suggested Questions</span>
-      <button 
-        className="suggested-questions-close" 
-        onClick={() => setShowSuggestions(false)}
-        aria-label="Close suggested questions"
-      >
-        ✕
-      </button>
-    </div>
-    <div className="suggested-questions">
-      {suggestedQuestions.map((question, idx) => (
-        <button 
-          key={idx}
-          onClick={() => setInput(question)}
-          className="suggested-question"
-        >
-          {question}
-        </button>
-      ))}
-    </div>
-  </div>
-)}
+            <div className="suggested-questions-container enhanced">
+              <div className="suggested-questions-header">
+                <span className="suggested-questions-title">
+                  💡 AI-Generated Questions
+                  <span className="enhancement-note">(Will use active enhancements)</span>
+                </span>
+                <button 
+                  className="suggested-questions-close" 
+                  onClick={() => setShowSuggestions(false)}
+                  aria-label="Close suggested questions"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="suggested-questions">
+                {suggestedQuestions.map((question, idx) => (
+                  <button 
+                    key={idx}
+                    onClick={() => setInput(question)}
+                    className="suggested-question enhanced"
+                  >
+                    <span className="question-text">{question}</span>
+                    <div className="enhancement-preview-badges">
+                      {advancedOptions.use_prf && <span className="mini-badge">PRF</span>}
+                      {advancedOptions.use_variants && <span className="mini-badge">Variants</span>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           
-          {/* Input area */}
-          <div className="input-container">
-            <textarea
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={connected && uploadResult ? "Type your question..." : connected ? "Upload a document to start chatting" : "Connecting to server..."}
-              disabled={!connected || !uploadResult || loading}
-              className={`chat-input ${(!connected || !uploadResult) ? 'disabled' : ''}`}
-              rows={1}
-            />
+          {/* Enhanced input area */}
+          <div className="input-container enhanced">
+            <div className="input-wrapper">
+              <textarea
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={connected && uploadResult ? 
+                  "Type your question... (Enhanced RAG will improve your results)" : 
+                  connected ? "Upload a document to start chatting" : 
+                  "Connecting to server..."}
+                disabled={!connected || !uploadResult || loading}
+                className={`chat-input ${(!connected || !uploadResult) ? 'disabled' : ''}`}
+                rows={1}
+              />
+              
+              {/* Enhancement status in input */}
+              {uploadResult && (advancedOptions.use_prf || advancedOptions.use_variants || advancedOptions.rerank) && (
+                <div className="input-enhancements">
+                  <div className="enhancement-tooltip">
+                    🔍 Enhanced retrieval active
+                    <div className="tooltip-content">
+                      <div>Your query will be enhanced using:</div>
+                      {advancedOptions.use_prf && <div>• Pseudo Relevance Feedback</div>}
+                      {advancedOptions.use_variants && <div>• Query Variants</div>}
+                      {advancedOptions.rerank && <div>• Cross-Encoder Reranking</div>}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             
             <button
               onClick={handleSubmit}
               disabled={!connected || !uploadResult || !input.trim() || loading}
-              className={`send-button ${(!connected || !uploadResult || !input.trim() || loading) ? 'disabled' : ''}`}
+              className={`send-button enhanced ${(!connected || !uploadResult || !input.trim() || loading) ? 'disabled' : ''}`}
             >
-              {loading ? 'Thinking...' : 'Send'}
+              {loading ? (
+                <span className="loading-text">
+                  {advancedOptions.use_prf || advancedOptions.use_variants ? 'Enhancing...' : 'Thinking...'}
+                </span>
+              ) : (
+                <span className="send-text">
+                  Send
+                  {(advancedOptions.use_prf || advancedOptions.use_variants) && (
+                    <span className="enhancement-indicator">🔍</span>
+                  )}
+                </span>
+              )}
             </button>
           </div>
         </div>
       </div>
-      
     </div>
   );
 };
