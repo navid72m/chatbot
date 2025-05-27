@@ -666,6 +666,324 @@ async def clear_caches():
         logger.error(f"Error clearing caches: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error clearing caches: {str(e)}")
 
+import sys
+import os
+import json
+import logging
+import io
+import shutil
+from typing import List, Dict, Optional, Any
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, StreamingResponse
+
+# Add these route handlers to your existing FastAPI app in app_integration_updated.py
+
+@app.get("/document/{document_name}")
+async def get_document(document_name: str):
+    """
+    Serve the document file
+    """
+    try:
+        file_path = os.path.join(UPLOAD_DIR, document_name)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"Document {document_name} not found")
+        
+        return FileResponse(
+            path=file_path, 
+            filename=document_name,
+            media_type="application/octet-stream"
+        )
+    except Exception as e:
+        logger.error(f"Error extracting text: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error extracting text: {str(e)}")
+
+@app.get("/document-highlights")
+async def get_document_highlights(
+    document: str,
+    response_id: str
+):
+    """
+    Get all highlights for a document associated with a specific response
+    """
+    try:
+        file_path = os.path.join(UPLOAD_DIR, document)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"Document {document} not found")
+        
+        # In a real implementation, fetch stored highlights from your database or tracking system
+        # For now, we'll return mock data for demonstration
+        
+        # Check if we can access the tracked context
+        highlights = []
+        if hasattr(smart_rag_pipeline, 'vector_store') and hasattr(smart_rag_pipeline.vector_store, 'context_tracking'):
+            tracked_context = smart_rag_pipeline.vector_store.context_tracking.get(response_id)
+            if tracked_context:
+                highlights = tracked_context.get('ranges', [])
+        
+        # If no highlights found, generate some mock data
+        if not highlights:
+            # Mock data - in a real implementation, these would be accurate coordinates
+            # based on the actual context used for retrieval
+            highlights = [
+                {
+                    "page": 1,
+                    "top": 150,
+                    "left": 72,
+                    "width": 450,
+                    "height": 80,
+                    "text": "The document was processed with smart processing enabled.",
+                    "relevance_score": 0.92
+                },
+                {
+                    "page": 1,
+                    "top": 350,
+                    "left": 72,
+                    "width": 450,
+                    "height": 60,
+                    "text": "Enhanced RAG with query rewriting was applied to improve retrieval quality.",
+                    "relevance_score": 0.87
+                },
+                {
+                    "page": 2,
+                    "top": 200,
+                    "left": 72,
+                    "width": 450,
+                    "height": 100,
+                    "text": "The system combines PRF, query variants, and cross-encoder reranking for optimal results.",
+                    "relevance_score": 0.95
+                }
+            ]
+        
+        return {
+            "document": document,
+            "response_id": response_id,
+            "highlights": highlights
+        }
+    except Exception as e:
+        logger.error(f"Error getting document highlights: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting document highlights: {str(e)}")
+
+@app.post("/query-with-context")
+async def query_with_context_tracking(request: dict):
+    """
+    Enhanced query endpoint that tracks context and source locations
+    """
+    try:
+        query = request.get("query")
+        document = request.get("document")
+        if not query:
+            raise HTTPException(status_code=400, detail="No query provided")
+        if not document:
+            document = getattr(app.state, "current_document", None)
+            if not document:
+                return {"response": "Please upload a document first before querying.", "error": "No document selected"}
+
+        # Get parameters
+        temperature = request.get("temperature", 0.3)
+        context_window = request.get("context_window", 5)
+        use_smart_retrieval = request.get("use_smart_retrieval", True)
+        
+        # Query rewriting parameters
+        use_prf = request.get("use_prf", True)
+        use_variants = request.get("use_variants", True)
+        prf_iterations = request.get("prf_iterations", 1)
+        fusion_method = request.get("fusion_method", "rrf")
+        rerank = request.get("rerank", True)
+        
+        # Generate a unique ID for context tracking
+        import uuid
+        response_id = str(uuid.uuid4())
+        
+        # Run the regular query with additional context tracking
+        result = await query_sync(request)
+        
+        # In a real implementation, you would extract the context locations during retrieval
+        # For now, we'll add mock data for demonstration
+        
+        # For PDF documents, include page numbers and coordinates for visualization
+        if document.lower().endswith('.pdf'):
+            # Create mock context ranges
+            # In a real implementation, these would be the actual locations in the PDF
+            # where the text that was used for retrieval is located
+            import random
+            
+            context_ranges = [
+                {
+                    "page": 1,
+                    "top": 150,
+                    "left": 72,
+                    "width": 450,
+                    "height": 80,
+                    "text": "The document was processed with smart processing enabled.",
+                    "relevance_score": 0.92
+                },
+                {
+                    "page": 1,
+                    "top": 350,
+                    "left": 72,
+                    "width": 450,
+                    "height": 60,
+                    "text": "Enhanced RAG with query rewriting was applied to improve retrieval quality.",
+                    "relevance_score": 0.87
+                },
+                {
+                    "page": 2,
+                    "top": 200,
+                    "left": 72,
+                    "width": 450,
+                    "height": 100,
+                    "text": "The system combines PRF, query variants, and cross-encoder reranking for optimal results.",
+                    "relevance_score": 0.95
+                }
+            ]
+            
+            context_text = "\n\n".join([r["text"] for r in context_ranges])
+            
+            # Add context information to the result
+            result["context_tracking"] = {
+                "response_id": response_id,
+                "context_ranges": context_ranges,
+                "context_text": context_text
+            }
+            
+            # In a real implementation, store this information in your tracking system
+            # For example:
+            if hasattr(smart_rag_pipeline, 'vector_store'):
+                if not hasattr(smart_rag_pipeline.vector_store, 'context_tracking'):
+                    smart_rag_pipeline.vector_store.context_tracking = {}
+                
+                smart_rag_pipeline.vector_store.context_tracking[response_id] = {
+                    "ranges": context_ranges,
+                    "text": context_text,
+                    "query": query,
+                    "timestamp": str(datetime.datetime.now())
+                }
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error in query with context tracking: {str(e)}")
+        return {
+            "response": f"Error processing your query: {str(e)}. Please try again.",
+            "error": str(e),
+            "success": False
+        } 
+@app.get("/context-info")
+async def get_context_info(
+    document: str, 
+    query_id: str, 
+    response_id: str
+):
+    """
+    Get context information for a specific query-response pair
+    """
+    try:
+        # Check if we have the document
+        file_path = os.path.join(UPLOAD_DIR, document)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"Document {document} not found")
+        
+        # This is where you would look up the actual context used for this response
+        # For now, we'll return mock data for PDF context visualization
+        
+        # For PDF documents, we need to include page numbers and coordinates
+        if document.lower().endswith('.pdf'):
+            # Mock data for demonstration - in a real implementation, retrieve from your retrieval system
+            context_ranges = []
+            context_text = ""
+            
+            # Check if we have enhanced context tracking in our vector store
+            if hasattr(smart_rag_pipeline, 'vector_store') and hasattr(smart_rag_pipeline.vector_store, 'context_tracking'):
+                # Try to get tracked context for this specific response
+                tracked_context = smart_rag_pipeline.vector_store.context_tracking.get(response_id)
+                
+                if tracked_context:
+                    context_ranges = tracked_context.get('ranges', [])
+                    context_text = tracked_context.get('text', "")
+                else:
+                    # Fall back to generating some mock data based on the document
+                    # In a real implementation, you should extract actual context locations
+                    
+                    # Let's create some mock context ranges for demonstration
+                    import random
+                    context_ranges = [
+                        {
+                            "page": 1,
+                            "top": 150,
+                            "left": 72,
+                            "width": 450,
+                            "height": 80,
+                            "text": "The document was processed with smart processing enabled."
+                        },
+                        {
+                            "page": 1,
+                            "top": 350,
+                            "left": 72,
+                            "width": 450,
+                            "height": 60,
+                            "text": "Enhanced RAG with query rewriting was applied to improve retrieval quality."
+                        },
+                        {
+                            "page": 2,
+                            "top": 200,
+                            "left": 72,
+                            "width": 450,
+                            "height": 100,
+                            "text": "The system combines PRF, query variants, and cross-encoder reranking for optimal results."
+                        }
+                    ]
+                    
+                    context_text = "\n\n".join([r["text"] for r in context_ranges])
+            
+            return {
+                "document": document,
+                "query_id": query_id,
+                "response_id": response_id,
+                "context_ranges": context_ranges,
+                "context_text": context_text
+            }
+        else:
+            # For non-PDF documents, we can just return text ranges
+            return {
+                "document": document,
+                "query_id": query_id,
+                "response_id": response_id,
+                "context_ranges": [],
+                "context_text": "Context visualization is currently only supported for PDF documents."
+            }
+    except Exception as e:
+        logger.error(f"Error getting context info: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting context info: {str(e)}")
+
+@app.post("/extract-text")
+async def extract_page_text(request: dict):
+    """
+    Extract text from a specific page region of a PDF document
+    """
+    try:
+        document_name = request.get("document")
+        page_number = request.get("page")
+        coords = request.get("coords")
+        
+        if not document_name or not page_number or not coords:
+            raise HTTPException(status_code=400, detail="Missing required parameters")
+        
+        file_path = os.path.join(UPLOAD_DIR, document_name)
+        if not os.path.exists(file_path) or not document_name.lower().endswith('.pdf'):
+            raise HTTPException(status_code=404, detail=f"PDF document {document_name} not found")
+        
+        # In a real implementation, you would use a PDF parsing library 
+        # to extract text from the specified coordinates
+        # For now, we'll return mock data
+        
+        return {
+            "text": "Extracted text would appear here in a real implementation.",
+            "page": page_number,
+            "coords": coords
+        }
+    except Exception as e:
+        logger.error(f"Error extracting text: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error extracting text: {str(e)}")
+    
 if __name__ == "__main__":
     import uvicorn
     import argparse

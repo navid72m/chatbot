@@ -6,6 +6,7 @@ import axios from 'axios';
 import MCPDocumentChat from './pages/documents/MCPDocumentChat';
 import ModelDownloadPage from './components/ModelDownloadPage'; // Updated import path
 import RAGEvaluationDashboard from './pages/documents/RAGEvaluationDashboard';
+import EnhancedDocumentChat from './pages/documents/EnhancedDocumentChat';
 // Simple placeholder component for not found page
 const NotFound = () => <div className="page-container"><h1>404</h1><p>Page not found</p></div>;
 
@@ -136,17 +137,23 @@ function App() {
     // If the server supports model management and we need to download a model
     if (serverStatus.modelManagementSupported && modelState.needsDownload) {
       return (
-        <ModelDownloadPage 
-          onDownloadComplete={handleModelDownloadComplete}
+        // <ModelDownloadPage 
+        //   onDownloadComplete={handleModelDownloadComplete}
+        //   selectedModel={modelState.selectedModel}
+        //   autoDownload={false}
+        // />
+        <EnhancedDocumentChat
+          onStreamingStateChange={handleStreamingStateChange}
+          onError={handleChatError}
+          initialStreamingEnabled={serverStatus.streamingSupported}
           selectedModel={modelState.selectedModel}
-          autoDownload={false}
         />
       );
     }
     
     // Otherwise, show the chat interface
     return (
-      <MCPDocumentChat 
+      <EnhancedDocumentChat
         onStreamingStateChange={handleStreamingStateChange}
         onError={handleChatError}
         initialStreamingEnabled={serverStatus.streamingSupported}
