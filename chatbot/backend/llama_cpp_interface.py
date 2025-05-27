@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 # Load llama.cpp model once during startup
 # MODEL_PATH = os.environ.get("LLAMA_CPP_MODEL_PATH", "./models/mistral-7b-instruct-v0.2.Q4_K_M.gguf")
-# MODEL_PATH = os.environ.get("LLAMA_CPP_MODEL_PATH", "./models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
+MODEL_PATH = os.environ.get("LLAMA_CPP_MODEL_PATH", "./models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf")
 # MODEL_PATH = os.environ.get("LLAMA_CPP_MODEL_PATH", "./models/mamba-790m-hf.Q4_K_M.gguf")
-MODEL_PATH = os.environ.get("LLAMA_CPP_MODEL_PATH", "./models/gemma-3-4b-it-q4_0.gguf")
+# MODEL_PATH = os.environ.get("LLAMA_CPP_MODEL_PATH", "./models/gemma-3-4b-it-q4_0.gguf")
 CTX_SIZE = int(os.environ.get("LLAMA_CTX_SIZE", 7500))
 N_THREADS = int(os.environ.get("LLAMA_THREADS", os.cpu_count() ))
 N_GPU_LAYERS = int(os.environ.get("LLAMA_GPU_LAYERS", -1))  # -1 means use all available GPU layers
