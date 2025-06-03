@@ -1,5 +1,13 @@
-import sys
 import os
+# CRITICAL: Set these BEFORE importing ML libraries
+os.environ["NNPACK_DISABLE"] = "1"
+os.environ["PYTORCH_DISABLE_NNPACK"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+import sys
+# import os
 import json
 import time
 import logging

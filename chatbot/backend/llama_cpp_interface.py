@@ -9,7 +9,11 @@ logger = logging.getLogger(__name__)
 
 
 
-
+try:
+    from kilt_enhancements import ImprovedKILTRAG
+    KILT_AVAILABLE = True
+except ImportError:
+    KILT_AVAILABLE = False
 
 
 # Load llama.cpp model once during startup
@@ -37,22 +41,66 @@ except Exception as e:
 # In llama_cpp_interface.py
 from improved_prompt_template import improved_llama_cpp_response
 
-# Find your stream_llama_cpp_response function and replace or modify it
-def stream_llama_cpp_response(query: str, context: str, model: str = None, temperature: float = 0.3, **kwargs) -> str:
-    """
-    Generate a response using llama.cpp LLM.
-    
-    Args:
-        query (str): The user's question
-        context (str): Retrieved context chunks
-        model (str): Ignored (for API compatibility)
-        temperature (float): Sampling temperature
 
-    Returns:
-        str: Generated answer
+# Find your stream_llama_cpp_response function and replace or modify it
+def stream_llama_cpp_response(query: str, context: str, model: str = "local", temperature: float = 0.1) -> str:
     """
-    # Use improved prompt template
-    return improved_llama_cpp_response( llm,query, context, model, temperature)
+    Enhanced response generation for KILT Natural Questions
+    
+    This replaces your stream_llama_cpp_response function with KILT-optimized prompting
+    """
+    
+    # Initialize improved KILT RAG
+    # kilt_rag = ImprovedKILTRAG()
+    
+    # Try improved answer generation first
+    # improved_answer = kilt_rag.improved_answer_generation(query, context)
+    
+    # if improved_answer and not any(phrase in improved_answer.lower() for phrase in 
+    #                              ["not available", "doesn't contain", "not clearly available"]):
+    #     return improved_answer
+    
+    # Fallback to LLM with better prompting
+    kilt_optimized_prompt = f"""
+Based on the context provided, answer this question with a CONCISE, SPECIFIC response.
+
+IMPORTANT: 
+- Give the most direct answer possible
+- For names, you may give just the first name or initial
+- For years, give just the year
+- For locations, give just the city/place name
+- If asking about a specific entity, give just that entity
+
+Context: {context[:800]}
+
+Question: {query}
+
+Answer (be very concise):"""
+
+    try:
+        # Import your LLM function
+        from llama_cpp_interface import llm
+        
+        response = llm(
+            prompt=kilt_optimized_prompt,
+            max_tokens=1000,  # Force concise answers
+            temperature=temperature
+        )
+        
+        if isinstance(response, dict):
+            answer = response.get("choices", [{}])[0].get("text", "").strip()
+        else:
+            answer = str(response).strip()
+        
+        # Post-process the answer for KILT format
+        # processed_answer = kilt_rag.improved_answer_generation(query, answer)
+        
+        # return processed_answer if processed_answer else answer
+        return answer
+        
+    except Exception as e:
+        logger.error(f"LLM generation failed: {e}")
+        return answer
 
 def list_llama_cpp_models() -> List[str]:
     """Stub function for compatibility with Ollama-style list."""

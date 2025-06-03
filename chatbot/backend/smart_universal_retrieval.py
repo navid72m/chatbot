@@ -1068,61 +1068,64 @@ class SmartRAGPipeline:
     def _generate_smart_suggestions(self, entities: List[SmartEntity], document_type: str) -> List[str]:
         """Generate intelligent suggestions based on extracted entities."""
         suggestions = []
+        from generate_suggestions import generate_suggested_questions
+        text = " ".join([chunk["text"] for chunk in self.vector_store.chunks])
+        suggestions = generate_suggested_questions(text, model="mistral", temperature=0.7, quantization="4bit")
         
-        # Find primary person
-        primary_person = None
-        for entity in entities:
-            if 'PERSON' in entity.label and entity.confidence > 0.7:
-                primary_person = entity
-                break
+        # # Find primary person
+        # primary_person = None
+        # for entity in entities:
+        #     if 'PERSON' in entity.label and entity.confidence > 0.7:
+        #         primary_person = entity
+        #         break
         
-        if document_type == 'resume':
-            if primary_person:
-                suggestions.extend([
-                    "Whose resume is this?",
-                    "What is the candidate's name?",
-                    f"What are {primary_person.text}'s qualifications?",
-                    f"What skills does {primary_person.text} have?",
-                    f"What is {primary_person.text}'s contact information?"
-                ])
-            else:
-                suggestions.extend([
-                    "Whose CV is this?",
-                    "What is the candidate's name?",
-                    "What are the main qualifications?",
-                    "What skills are mentioned?",
-                    "What contact information is provided?"
-                ])
+        # if document_type == 'resume':
+        #     if primary_person:
+        #         suggestions.extend([
+        #             "Whose resume is this?",
+        #             "What is the candidate's name?",
+        #             f"What are {primary_person.text}'s qualifications?",
+        #             f"What skills does {primary_person.text} have?",
+        #             f"What is {primary_person.text}'s contact information?"
+        #         ])
+        #     else:
+        #         suggestions.extend([
+        #             "Whose CV is this?",
+        #             "What is the candidate's name?",
+        #             "What are the main qualifications?",
+        #             "What skills are mentioned?",
+        #             "What contact information is provided?"
+        #         ])
         
-        elif document_type == 'report':
-            suggestions.extend([
-                "What is the main topic of this report?",
-                "Who are the key people mentioned?",
-                "What are the main findings?",
-                "What methodology was used?",
-                "What are the conclusions?"
-            ])
+        # elif document_type == 'report':
+        #     suggestions.extend([
+        #         "What is the main topic of this report?",
+        #         "Who are the key people mentioned?",
+        #         "What are the main findings?",
+        #         "What methodology was used?",
+        #         "What are the conclusions?"
+        #     ])
         
-        else:  # General document
-            if primary_person:
-                suggestions.append(f"Who is {primary_person.text}?")
+        # else:  # General document
+        #     if primary_person:
+        #         suggestions.append(f"Who is {primary_person.text}?")
             
-            suggestions.extend([
-                "What is this document about?",
-                "Who are the key people mentioned?",
-                "What are the main topics?",
-                "What organizations are mentioned?",
-                "What important dates are referenced?"
-            ])
+        #     suggestions.extend([
+        #         "What is this document about?",
+        #         "Who are the key people mentioned?",
+        #         "What are the main topics?",
+        #         "What organizations are mentioned?",
+        #         "What important dates are referenced?"
+        #     ])
         
-        # Add entity-specific suggestions
-        skill_entities = [e for e in entities if 'SKILL' in e.label]
-        if skill_entities:
-            suggestions.append("What technical skills are mentioned?")
+        # # Add entity-specific suggestions
+        # skill_entities = [e for e in entities if 'SKILL' in e.label]
+        # if skill_entities:
+        #     suggestions.append("What technical skills are mentioned?")
         
-        org_entities = [e for e in entities if 'ORG' in e.label]
-        if org_entities:
-            suggestions.append("What organizations are referenced?")
+        # org_entities = [e for e in entities if 'ORG' in e.label]
+        # if org_entities:
+        #     suggestions.append("What organizations are referenced?")
         
         return suggestions[:5]
     

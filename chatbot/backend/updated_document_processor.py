@@ -217,78 +217,305 @@ def is_valid_image(file_path: str) -> bool:
         return False
 
 # Extract text from image using PaddleOCR
+# Recommended OCR implementation to replace PaddleOCR
+# This uses a multi-tier approach prioritizing compatibility and reliability
+
+# Emergency OCR fix - replace your extract_text_from_image function with this
+# Emergency OCR fix - replace your extract_text_from_image function with this
+import os
+import logging
+import subprocess
+import sys
+from typing import Optional
+from PIL import Image, ImageEnhance
+
+logger = logging.getLogger(__name__)
+
 def extract_text_from_image(image_path: str, lang: str = 'en') -> str:
-    """Extract text from an image using PaddleOCR with proper error handling."""
+    """
+    EMERGENCY FIX: Apple Silicon compatible OCR that avoids EasyOCR completely.
+    This version only uses Tesseract and Apple Vision to prevent crashes.
+    """
     if not is_valid_image(image_path):
         return f"[Image validation failed: {os.path.basename(image_path)}]"
     
+    logger.info(f"🚨 Emergency OCR mode for Apple Silicon: {image_path}")
+    
+    # PRIORITY 1: Try Tesseract first (most stable)
+    result = try_tesseract_ocr_emergency(image_path, lang)
+    if result and len(result.strip()) > 10:  # Only accept if we got decent text
+        logger.info(f"✅ Tesseract success: {len(result)} characters")
+        return result
+    
+    # PRIORITY 2: Try Apple Vision (macOS native)
+    result = try_apple_vision_ocr_emergency(image_path)
+    if result and len(result.strip()) > 10:
+        logger.info(f"✅ Apple Vision success: {len(result)} characters")
+        return result
+    
+    # PRIORITY 3: Basic OCR fallback (no ML libraries)
+    result = try_basic_text_extraction(image_path)
+    if result:
+        return result
+    
+    # If all else fails, return image metadata
+    logger.warning(f"⚠️ All OCR methods failed for {image_path}")
+    return create_image_document_emergency(image_path)
+
+def try_tesseract_ocr_emergency(image_path: str, lang: str = 'en') -> Optional[str]:
+    """Emergency Tesseract implementation with automatic tessdata path detection."""
     try:
+        # Check if tesseract is installed
+        result = subprocess.run(['which', 'tesseract'], capture_output=True, timeout=5)
+        if result.returncode != 0:
+            logger.warning("❌ Tesseract not found. Install with: brew install tesseract tesseract-lang")
+            return None
+        
+        logger.info("🔍 Tesseract OCR (emergency mode)...")
+        
+        # Auto-detect and set TESSDATA_PREFIX
+        tessdata_paths = [
+            "/opt/homebrew/share/tessdata",
+            "/usr/local/share/tessdata", 
+            "/opt/homebrew/share/tesseract/tessdata",
+            "/usr/local/share/tesseract/tessdata",
+            "/usr/share/tessdata",
+            "/usr/share/tesseract-ocr/tessdata"
+        ]
+        
+        tessdata_path = None
+        for path in tessdata_paths:
+            if os.path.exists(path) and os.path.exists(f"{path}/eng.traineddata"):
+                tessdata_path = path
+                break
+        
+        if not tessdata_path:
+            # Try to find any tessdata directory
+            for path in tessdata_paths:
+                if os.path.exists(path):
+                    tessdata_path = path
+                    logger.warning(f"⚠️ Found tessdata at {path} but eng.traineddata missing")
+                    break
+        
+        # Set up environment for tesseract
+        env = os.environ.copy()
+        if tessdata_path:
+            env['TESSDATA_PREFIX'] = tessdata_path
+            logger.info(f"📁 Using tessdata path: {tessdata_path}")
+        
+        # Try different language configurations
+        lang_options = ['eng', 'en', lang] if lang != 'en' else ['eng', 'en']
+        
+        for lang_code in lang_options:
+            try:
+                cmd = ['tesseract', image_path, '-', '-l', lang_code, '--oem', '3', '--psm', '6']
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    text = result.stdout.strip()
+                    logger.info(f"✅ Tesseract extracted {len(text)} characters with lang={lang_code}")
+                    return text
+                elif result.stderr:
+                    logger.debug(f"Tesseract lang={lang_code} failed: {result.stderr}")
+            except Exception as e:
+                logger.debug(f"Tesseract lang={lang_code} error: {e}")
+                continue
+        
+        # If all language attempts failed, try without language specification
         try:
-            from paddleocr import PaddleOCR
-        except ImportError:
-            logger.warning("PaddleOCR not installed, returning image metadata only")
-            return create_image_document(image_path)
+            cmd = ['tesseract', image_path, '-', '--oem', '3', '--psm', '6']
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
+            
+            if result.returncode == 0 and result.stdout.strip():
+                text = result.stdout.strip()
+                logger.info(f"✅ Tesseract extracted {len(text)} characters (no lang specified)")
+                return text
+        except Exception as e:
+            logger.debug(f"Tesseract no-lang attempt failed: {e}")
         
-        use_gpu = is_gpu_available()
-        logger.info(f"Initializing PaddleOCR (lang: {lang}, gpu: {use_gpu})")
+        logger.warning("❌ All Tesseract attempts failed. Try: brew install tesseract-lang")
+        return None
+            
+    except subprocess.TimeoutExpired:
+        logger.warning("❌ Tesseract timed out")
+        return None
+    except Exception as e:
+        logger.warning(f"❌ Tesseract error: {e}")
+        return None
+
+def try_apple_vision_ocr_emergency(image_path: str) -> Optional[str]:
+    """Emergency Apple Vision implementation."""
+    try:
+        if sys.platform != 'darwin':
+            return None
+            
+        logger.info("🍎 Apple Vision OCR (emergency mode)...")
         
-        ocr = PaddleOCR(
-            use_angle_cls=True,
-            lang=lang,
-            use_gpu=use_gpu,
-            show_log=False
+        # Simplified Swift script for emergency use
+        swift_script = f'''
+import Vision
+import Foundation
+import AppKit
+
+let url = URL(fileURLWithPath: "{image_path}")
+guard let image = NSImage(contentsOf: url),
+      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {{
+    exit(1)
+}}
+
+let semaphore = DispatchSemaphore(value: 0)
+var extractedText = ""
+
+let request = VNRecognizeTextRequest {{ (request, error) in
+    defer {{ semaphore.signal() }}
+    
+    guard let observations = request.results as? [VNRecognizedTextObservation] else {{
+        return
+    }}
+    
+    for observation in observations {{
+        guard let topCandidate = observation.topCandidates(1).first else {{ continue }}
+        extractedText += topCandidate.string + " "
+    }}
+}}
+
+request.recognitionLevel = .accurate
+request.usesLanguageCorrection = true
+
+let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+do {{
+    try handler.perform([request])
+    semaphore.wait()
+    
+    if !extractedText.isEmpty {{
+        print(extractedText.trimmingCharacters(in: .whitespacesAndNewlines))
+    }}
+}} catch {{
+    exit(1)
+}}
+'''
+        
+        result = subprocess.run(
+            ['swift', '-'], 
+            input=swift_script.encode(), 
+            capture_output=True, 
+            timeout=20
         )
         
-        logger.info(f"Processing image: {image_path}")
-        result = ocr.ocr(image_path, cls=True)
-        
-        extracted_text = ""
-        
-        if result and len(result) > 0:
-            try:
-                for page_idx, page_result in enumerate(result):
-                    if not page_result:
-                        continue
-                        
-                    if page_idx > 0:
-                        extracted_text += "\n\n--- Page " + str(page_idx + 1) + " ---\n\n"
-                    
-                    for line in page_result:
-                        if len(line) >= 2:
-                            if isinstance(line[1], tuple) and len(line[1]) >= 2:
-                                text = line[1][0]
-                                confidence = line[1][1]
-                                
-                                if confidence > 0.5:
-                                    extracted_text += text + " "
-            except Exception as e:
-                logger.warning(f"Error parsing OCR results: {str(e)}")
-                try:
-                    for item in result:
-                        if isinstance(item, list):
-                            for line in item:
-                                if isinstance(line, tuple) and len(line) >= 2:
-                                    text = str(line[1])
-                                    extracted_text += text + " "
-                                elif isinstance(line, list) and len(line) >= 2:
-                                    text = str(line[1])
-                                    extracted_text += text + " "
-                except Exception:
-                    logger.error("Failed to extract text with fallback method")
-        
-        extracted_text = extracted_text.strip()
-        
-        if not extracted_text:
-            logger.warning(f"No text extracted from image: {image_path}")
-            return create_image_document(image_path)
-        
-        logger.info(f"Extracted {len(extracted_text)} characters from image {image_path}")
-        return extracted_text
-        
+        if result.returncode == 0 and result.stdout:
+            text = result.stdout.decode().strip()
+            if text:
+                logger.info(f"✅ Apple Vision extracted {len(text)} characters")
+                return text
+                
     except Exception as e:
-        logger.error(f"Error during OCR processing: {str(e)}")
-        return create_image_document(image_path)
+        logger.debug(f"Apple Vision failed: {e}")
+    
+    return None
 
+def try_basic_text_extraction(image_path: str) -> Optional[str]:
+    """Very basic text extraction using PIL only (no ML)."""
+    try:
+        logger.info("📄 Attempting basic text extraction...")
+        
+        # For now, just return image info with a note
+        # You could implement simple character recognition here if needed
+        with Image.open(image_path) as img:
+            # Basic image analysis
+            width, height = img.size
+            mode = img.mode
+            
+            # Simple heuristic: if image is very text-like (high contrast, etc.)
+            # we could attempt basic pattern matching, but for now just document it
+            
+            return f"""[Text Image Detected]
+Image: {os.path.basename(image_path)}
+Dimensions: {width}x{height}
+Format: {img.format}
+Mode: {mode}
+
+This appears to be a text-containing image. 
+Advanced OCR failed, but the image was processed successfully.
+Consider installing Tesseract for text extraction: brew install tesseract
+"""
+            
+    except Exception as e:
+        logger.warning(f"Basic extraction failed: {e}")
+        return None
+
+def create_image_document_emergency(file_path: str) -> str:
+    """Emergency image document creation."""
+    try:
+        file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path) / 1024  # KB
+        
+        try:
+            with Image.open(file_path) as img:
+                info = f"""[Image File Successfully Processed]
+Filename: {file_name}
+Size: {file_size:.1f} KB
+Dimensions: {img.width}x{img.height} pixels
+Format: {img.format}
+Mode: {img.mode}
+
+🚨 OCR text extraction failed due to Apple Silicon compatibility issues.
+The image was processed and indexed for search, but text content was not extracted.
+
+Recommendations:
+1. Install Tesseract: brew install tesseract
+2. For better OCR, consider using cloud services
+3. The image metadata is searchable
+"""
+                return info
+        except Exception:
+            return f"[Image File: {file_name}, Size: {file_size:.1f} KB]\nImage processed but text extraction failed."
+            
+    except Exception as e:
+        logger.error(f"Error creating emergency image document: {e}")
+        return f"[Image file: {os.path.basename(file_path)}]\nProcessing failed."
+
+# Keep the original is_valid_image function
+def is_valid_image(file_path: str) -> bool:
+    """Check if the file is a valid image that can be processed."""
+    if not os.path.exists(file_path):
+        logger.error(f"File does not exist: {file_path}")
+        return False
+        
+    try:
+        from PIL import Image
+        
+        valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp']
+        if not any(file_path.lower().endswith(ext) for ext in valid_extensions):
+            logger.warning(f"File extension not recognized as an image: {file_path}")
+            return False
+        
+        try:
+            with Image.open(file_path) as img:
+                img.load()
+                
+                if img.width < 10 or img.height < 10:
+                    logger.warning(f"Image is very small: {img.width}x{img.height}")
+                    return False
+                    
+                if img.width > 10000 or img.height > 10000:
+                    logger.warning(f"Image is very large: {img.width}x{img.height}")
+            
+            logger.info(f"Valid image: {file_path} ({img.width}x{img.height})")
+            return True
+        except Exception as e:
+            logger.warning(f"Invalid image file {file_path}: {e}")
+            return False
+    except ImportError:
+        logger.warning("PIL not installed, skipping image validation")
+        return False
+
+# Emergency: disable EasyOCR completely
+def try_easyocr(*args, **kwargs):
+    """Emergency: EasyOCR disabled to prevent crashes."""
+    logger.warning("🚨 EasyOCR disabled to prevent Apple Silicon crashes")
+    return None
+# For backward compatibility with existing code
 def create_image_document(file_path: str) -> str:
     """Creates a simple document for image files with metadata."""
     try:
@@ -298,18 +525,19 @@ def create_image_document(file_path: str) -> str:
         
         image_info = ""
         try:
-            from PIL import Image
             with Image.open(file_path) as img:
                 image_info = f"\nImage dimensions: {img.width}x{img.height} pixels\nImage format: {img.format}\nImage mode: {img.mode}"
         except:
             image_info = ""
         
-        description = f"[Image file: {file_name}]\nFile size: {file_size_kb:.2f} KB{image_info}\n\nThis is an image file. Install PaddleOCR for text extraction."
+        description = f"[Image file: {file_name}]\nFile size: {file_size_kb:.2f} KB{image_info}\n\nThis image could not be processed by OCR. Consider checking the image quality or OCR setup."
         
         return description
     except Exception as e:
         logger.error(f"Error creating image document: {e}")
         return f"[Image file: {os.path.basename(file_path)}]\nError processing image file."
+
+
 
 def estimate_token_count(text: str) -> int:
     """Roughly estimate token count - 1 token ≈ 4 chars for English text."""
@@ -677,7 +905,7 @@ def query_index(query, top_k=5, use_smart_retrieval=True):
             except Exception as e:
                 logger.warning(f"Error processing document in pruning: {e}")
                 continue
-        
+        logger.info(f"Pruned results: {pruned_results}")
         return pruned_results
     
     except Exception as e:
@@ -793,4 +1021,12 @@ def is_valid_chunk(text: str) -> bool:
 
 # Example usage
 if __name__ == "__main__":
-    pass
+    # Demo the OCR availability check
+    availability = check_ocr_availability()
+    print("OCR Availability Report:")
+    for method, info in availability.items():
+        status = "✅ Available" if info['available'] else f"❌ {info['reason']}"
+        print(f"  {method}: {status}")
+    
+    if not any(info['available'] for info in availability.values()):
+        install_recommended_ocr()
