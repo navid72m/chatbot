@@ -38,13 +38,8 @@ const EnhancedDocumentChat = ({
   const [evaluationError, setEvaluationError] = useState(null);
   
   // PDF Viewer state
-  const [showPdfViewer, setShowPdfViewer] = useState(true);
+  const [showPdfViewer, setShowPdfViewer] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState(null);
-  
-  // Image content state
-  const [imageData, setImageData] = useState(null);
-  const [imageLoading, setImageLoading] = useState(false);
-  const [imageError, setImageError] = useState(null);
   
   // Enhanced options state with query rewriting
   const [advancedOptions, setAdvancedOptions] = useState({
@@ -82,6 +77,9 @@ const EnhancedDocumentChat = ({
   // Query rewriting stats
   const [queryStats, setQueryStats] = useState(null);
   const [showStats, setShowStats] = useState(false);
+
+  // Document content state
+  const [documentContent, setDocumentContent] = useState(null);
 
   // Check server connection on component mount
   useEffect(() => {
@@ -269,12 +267,22 @@ const EnhancedDocumentChat = ({
         console.warn("Couldn't fetch suggested questions:", err);
       }
       
-      // Show document viewer for PDFs
-      if (documentInfo.filename.toLowerCase().endsWith('.pdf')) {
-        setShowPdfViewer(true);
-      } else {
-        setShowPdfViewer(false);
+      // Fetch document content for images
+      const fileExtension = documentInfo.filename.toLowerCase().split('.').pop();
+      const isImage = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExtension);
+      const isPdf = fileExtension === 'pdf';
+
+      if (isImage || isPdf) {
+        try {
+          const contentResponse = await axios.get(`${getBackendURL()}/document-text/${documentInfo.filename}`);
+          setDocumentContent(contentResponse.data);
+        } catch (err) {
+          console.warn("Couldn't fetch document content:", err);
+        }
       }
+
+      // Show document viewer for PDFs and images
+      setShowPdfViewer(isPdf || isImage);
       
       // Add welcome message
       setMessages([
@@ -624,66 +632,15 @@ The enhanced system with query rewriting generated more comprehensive responses 
     }
   };
 
-  // Fetch image data when upload result changes
-  useEffect(() => {
-    const fetchImageData = async () => {
-      if (!uploadResult || !uploadResult.filename.match(/\.(jpg|jpeg|png|gif)$/i)) {
-        setImageData(null);
-        return;
-      }
-
-      try {
-        setImageLoading(true);
-        setImageError(null);
-        const response = await axios.get(`${getBackendURL()}/document-text/${uploadResult.filename}`);
-        setImageData(response.data);
-      } catch (err) {
-        console.error('Error fetching image data:', err);
-        setImageError(err.message);
-      } finally {
-        setImageLoading(false);
-      }
-    };
-
-    fetchImageData();
-  }, [uploadResult]);
-
-  // Update showPdfViewer when uploadResult changes
-  useEffect(() => {
-    if (uploadResult) {
-      const isPdf = uploadResult.filename.toLowerCase().endsWith('.pdf');
-      const isImage = uploadResult.filename.match(/\.(jpg|jpeg|png|gif)$/i);
-      setShowPdfViewer(isPdf || isImage);
-    }
-  }, [uploadResult]);
-
   return (
-    <div 
-      className="document-chat-container" 
-      style={{ 
-        height: '100vh', 
-        width: '100vw', 
-        overflow: 'hidden',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: '#f5f7fa',
-        display: 'flex',
-        flexDirection: 'column'
-      }}
-    >
-      <header className="document-chat-header" style={{ flexShrink: 0 }}>
+    <div className="document-chat-page">
+      <header className="page-header">
         <h1>Enhanced Document Chat with Context Visualization</h1>
         <p>Upload documents, chat, and see exactly what content was used to generate answers</p>
       </header>
       
       {/* Connection Status */}
-      <div 
-        className={`connection-status ${connected ? 'connected' : 'disconnected'}`}
-        style={{ flexShrink: 0 }}
-      >
+      <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
         <span className="status-indicator"></span>
         <span>{connected ? 'Connected' : 'Disconnected'}</span>
         {connected && serverInfo?.features && (
@@ -695,18 +652,7 @@ The enhanced system with query rewriting generated more comprehensive responses 
         )}
       </div>
       
-      <div 
-        className="document-chat-grid" 
-        style={{ 
-          display: 'grid', 
-          gridTemplateColumns: showPdfViewer ? '300px 1fr 300px' : '300px 1fr', 
-          gap: '0', 
-          flex: 1,
-          minHeight: 0,
-          backgroundColor: '#f5f7fa',
-          position: 'relative'
-        }}
-      >
+      <div className="enhanced-chat-layout">
         {/* Left sidebar */}
         <div className="upload-sidebar">
           {/* Document upload card */}
@@ -1070,169 +1016,40 @@ The enhanced system with query rewriting generated more comprehensive responses 
           </div>
         </div>
         
-        {/* Right panel for PDF or Image content */}
+        {/* Right PDF viewer panel - only show for PDFs */}
         {showPdfViewer && uploadResult && (
-          <div 
-            className="pdf-viewer-panel" 
-            style={{ 
-              height: '100%',
-              width: '100%',
-              overflow: 'auto',
-              backgroundColor: '#ffffff',
-              borderLeft: '1px solid #e1e5eb',
-              display: 'flex',
-              flexDirection: 'column',
-              padding: '16px',
-              position: 'relative',
-              zIndex: 1,
-              visibility: 'visible',
-              opacity: 1
-            }}
-          >
+          <div className="pdf-viewer-panel">
+            <div className="pdf-viewer-header">
+              <h3>Document Viewer</h3>
+              <button 
+                onClick={() => setShowPdfViewer(false)}
+                className="close-button"
+              >
+                ✕
+              </button>
+            </div>
             {uploadResult.filename.toLowerCase().endsWith('.pdf') ? (
               <PDFContextViewer 
                 documentName={uploadResult.filename}
                 currentQuery={selectedMessage?.replyTo ? messages.find(m => m.id === selectedMessage.replyTo)?.content : null}
                 currentAnswer={selectedMessage?.content}
                 currentMessage={selectedMessage}
-                style={{ flex: 1, minHeight: 0 }}
               />
-            ) : uploadResult.filename.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: '16px', 
-                height: '100%', 
-                overflow: 'auto',
-                position: 'relative',
-                zIndex: 1,
-                visibility: 'visible',
-                opacity: 1
-              }}>
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'center', 
-                  alignItems: 'center',
-                  backgroundColor: '#f8fafc',
-                  borderRadius: '8px',
-                  padding: '16px',
-                  flexShrink: 0,
-                  border: '1px solid #e2e8f0'
-                }}>
+            ) : documentContent && documentContent.is_image ? (
+              <div className="image-viewer">
+                <div className="image-container">
                   <img 
                     src={`${getBackendURL()}/document/${uploadResult.filename}`}
-                    alt="Uploaded image"
-                    style={{ 
-                      maxWidth: '100%',
-                      maxHeight: '300px',
-                      objectFit: 'contain',
-                      display: 'block'
-                    }}
+                    alt={uploadResult.filename}
+                    className="document-image"
                   />
                 </div>
-
-                {imageLoading && (
-                  <div style={{ 
-                    textAlign: 'center', 
-                    padding: '20px',
-                    backgroundColor: '#f8fafc',
-                    borderRadius: '8px',
-                    border: '1px solid #e2e8f0'
-                  }}>
-                    Loading image content...
-                  </div>
-                )}
-
-                {imageError && (
-                  <div style={{ 
-                    backgroundColor: '#fff5f5',
-                    padding: '12px',
-                    borderRadius: '8px',
-                    border: '1px solid #fed7d7',
-                    color: '#c53030'
-                  }}>
-                    Error loading image content: {imageError}
-                  </div>
-                )}
-
-                {imageData && (
-                  <div style={{ 
-                    flex: 1, 
-                    overflow: 'auto',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '16px'
-                  }}>
-                    {/* Image Metadata */}
-                    {imageData.image_info && (
-                      <div style={{
-                        backgroundColor: '#f8fafc',
-                        padding: '16px',
-                        borderRadius: '8px',
-                        border: '1px solid #e2e8f0',
-                        marginBottom: '16px'
-                      }}>
-                        <h3 style={{ 
-                          margin: '0 0 12px 0',
-                          fontSize: '16px',
-                          color: '#2a3f5f'
-                        }}>Image Information</h3>
-                        <div style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'auto 1fr',
-                          gap: '8px',
-                          fontSize: '14px'
-                        }}>
-                          <span style={{ color: '#718096' }}>Dimensions:</span>
-                          <span>{imageData.image_info.width} × {imageData.image_info.height} pixels</span>
-                          <span style={{ color: '#718096' }}>Format:</span>
-                          <span>{imageData.image_info.format?.toUpperCase()}</span>
-                          <span style={{ color: '#718096' }}>Size:</span>
-                          <span>{(imageData.image_info.size_bytes / 1024).toFixed(1)} KB</span>
-                          {imageData.image_info.has_transparency && (
-                            <>
-                              <span style={{ color: '#718096' }}>Transparency:</span>
-                              <span>Yes</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Extracted Text */}
-                    {imageData.extracted_text && (
-                      <div style={{
-                        backgroundColor: '#f0f8ff',
-                        padding: '16px',
-                        borderRadius: '8px',
-                        border: '1px solid #bee3f8'
-                      }}>
-                        <h3 style={{ 
-                          margin: '0 0 12px 0',
-                          fontSize: '16px',
-                          color: '#2a3f5f'
-                        }}>Extracted Text</h3>
-                        <div style={{
-                          whiteSpace: 'pre-wrap',
-                          fontSize: '14px',
-                          lineHeight: '1.5',
-                          color: '#4a5568',
-                          backgroundColor: '#ffffff',
-                          padding: '12px',
-                          borderRadius: '4px',
-                          border: '1px solid #e2e8f0'
-                        }}>
-                          {imageData.extracted_text}
-                        </div>
-                        <div style={{
-                          marginTop: '8px',
-                          fontSize: '12px',
-                          color: '#718096'
-                        }}>
-                          Extracted using {imageData.extraction_method}
-                        </div>
-                      </div>
-                    )}
+                {documentContent.extracted_text && (
+                  <div className="image-text-content">
+                    <h4>Extracted Text</h4>
+                    <div className="text-content">
+                      {documentContent.extracted_text}
+                    </div>
                   </div>
                 )}
               </div>
