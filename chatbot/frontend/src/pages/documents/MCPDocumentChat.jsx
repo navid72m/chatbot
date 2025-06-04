@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getBackendURL } from '@/api/baseURL';
 import { useNavigate } from 'react-router-dom';
 
-// Enhanced MCPDocumentChat component with query rewriting features
+// Enhanced MCPDocumentChat component with query rewriting features and image text display
 const MCPDocumentChat = ({ 
   onError = () => {}
 }) => {
@@ -50,6 +50,13 @@ const MCPDocumentChat = ({
     rerank: true
   });
   
+  // Image text extraction state
+  const [documentText, setDocumentText] = useState(null);
+  const [loadingDocumentText, setLoadingDocumentText] = useState(false);
+  const [showFullText, setShowFullText] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
+  
   const [showOptions, setShowOptions] = useState(false);
   const [showQueryRewritingOptions, setShowQueryRewritingOptions] = useState(false);
   const [availableModels, setAvailableModels] = useState(["mixtral-8x7b-instruct-v0.1.Q4_K_M"]);
@@ -70,6 +77,30 @@ const MCPDocumentChat = ({
   // Query rewriting stats
   const [queryStats, setQueryStats] = useState(null);
   const [showStats, setShowStats] = useState(false);
+
+  // Copy text to clipboard with success feedback
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      } catch (fallbackErr) {
+        console.error('Fallback copy failed:', fallbackErr);
+      }
+      document.body.removeChild(textArea);
+    }
+  };
 
   // Check server connection on component mount
   useEffect(() => {
@@ -140,6 +171,77 @@ const MCPDocumentChat = ({
       }
     } catch (error) {
       console.error('Error fetching query stats:', error);
+    }
+  };
+  
+  // Fetch document text content (especially for images)
+  const fetchDocumentText = async (filename) => {
+    if (!filename) return;
+    
+    setLoadingDocumentText(true);
+    try {
+      const response = await axios.get(`${getBackendURL()}/document-text/${filename}`);
+      if (response.data) {
+        setDocumentText(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching document text:', error);
+      setDocumentText({
+        error: error.response?.data?.detail || 'Failed to extract text',
+        document: filename,
+        is_image: false
+      });
+    } finally {
+      setLoadingDocumentText(false);
+    }
+  };
+  
+  // Reprocess image with different OCR method
+  const reprocessImage = async (method = 'auto') => {
+    if (!uploadResult || !documentText?.is_image) return;
+    
+    setReprocessing(true);
+    try {
+      const response = await axios.post(`${getBackendURL()}/reprocess-image`, {
+        document: uploadResult.filename,
+        method: method
+      });
+      
+      if (response.data) {
+        // Update the document text with new extraction
+        setDocumentText(prev => ({
+          ...prev,
+          extracted_text: response.data.extracted_text,
+          text_length: response.data.text_length,
+          extraction_method: `Reprocessed with ${response.data.reprocessing_method}`,
+          reprocessing_results: response.data.all_results
+        }));
+        
+        // Add success message to chat
+        setMessages(prev => [
+          ...prev,
+          {
+            id: uuidv4(),
+            role: 'system',
+            content: `Image reprocessed successfully with ${method} method. Extracted ${response.data.text_length} characters.`,
+            timestamp: new Date().toISOString()
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error('Error reprocessing image:', error);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: uuidv4(),
+          role: 'system',
+          content: `Failed to reprocess image: ${error.response?.data?.detail || error.message}`,
+          isError: true,
+          timestamp: new Date().toISOString()
+        }
+      ]);
+    } finally {
+      setReprocessing(false);
     }
   };
   
@@ -259,6 +361,9 @@ const MCPDocumentChat = ({
       
       // Fetch initial stats
       fetchQueryStats();
+      
+      // Fetch document text content
+      fetchDocumentText(documentInfo.filename);
       
       // Add welcome message with enhancement info
       const enhancementFeatures = [];
@@ -586,11 +691,11 @@ The enhanced system with query rewriting generated more comprehensive responses 
   };
 
   return (
-    <div className="document-upload-page">
-      <header className="page-header">
+    <div className="document-chat-container">
+      <div className="document-chat-header">
         <h1>Enhanced Document Chat</h1>
         <p>Upload documents and chat with advanced query rewriting capabilities</p>
-      </header>
+      </div>
       
       {/* Connection Status */}
       <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
@@ -605,29 +710,29 @@ The enhanced system with query rewriting generated more comprehensive responses 
         )}
       </div>
       
-      <div className="upload-container">
+      <div className="document-chat-grid">
         {/* Left sidebar */}
         <div className="upload-sidebar">
           {/* Document upload card */}
-          <div className="upload-card">
+          <div className="card">
             <div className="card-header">
               <h2>Upload Document</h2>
             </div>
             
             {/* Model Settings */}
             <div className="settings-panel">
-              <button 
-                className="settings-toggle"
+              <div 
+                className="settings-header"
                 onClick={() => setShowOptions(!showOptions)}
               >
-                <span>Model Settings</span>
+                <span className="settings-title">Model Settings</span>
                 <span className={`toggle-icon ${showOptions ? 'open' : ''}`}>▼</span>
-              </button>
+              </div>
               
               {showOptions && (
                 <div className="settings-content">
                   <div className="setting-group">
-                    <label>Model:</label>
+                    <label className="setting-label">Model:</label>
                     <select
                       name="model"
                       value={advancedOptions.model}
@@ -640,10 +745,11 @@ The enhanced system with query rewriting generated more comprehensive responses 
                     </select>
                   </div>
                   
-                  <div className="setting-group">
-                    <label>
-                      Temperature: <span className="temperature-value">{advancedOptions.temperature}</span>
-                    </label>
+                  <div className="range-container">
+                    <div className="range-header">
+                      <label className="setting-label">Temperature:</label>
+                      <span className="range-value">{advancedOptions.temperature}</span>
+                    </div>
                     <input
                       type="range"
                       name="temperature"
@@ -681,13 +787,13 @@ The enhanced system with query rewriting generated more comprehensive responses 
 
             {/* Query Rewriting Settings */}
             <div className="settings-panel">
-              <button 
-                className="settings-toggle"
+              <div 
+                className="settings-header"
                 onClick={() => setShowQueryRewritingOptions(!showQueryRewritingOptions)}
               >
-                <span>🔍 Query Rewriting</span>
+                <span className="settings-title">🔍 Query Rewriting</span>
                 <span className={`toggle-icon ${showQueryRewritingOptions ? 'open' : ''}`}>▼</span>
-              </button>
+              </div>
               
               {showQueryRewritingOptions && (
                 <div className="settings-content">
@@ -740,7 +846,7 @@ The enhanced system with query rewriting generated more comprehensive responses 
                   </div>
 
                   <div className="setting-group">
-                    <label>PRF Iterations:</label>
+                    <label className="setting-label">PRF Iterations:</label>
                     <select
                       name="prf_iterations"
                       value={advancedOptions.prf_iterations}
@@ -755,7 +861,7 @@ The enhanced system with query rewriting generated more comprehensive responses 
                   </div>
 
                   <div className="setting-group">
-                    <label>Fusion Method:</label>
+                    <label className="setting-label">Fusion Method:</label>
                     <select
                       name="fusion_method"
                       value={advancedOptions.fusion_method}
@@ -794,7 +900,7 @@ The enhanced system with query rewriting generated more comprehensive responses 
                 <p className="file-types">
                   {file 
                     ? `${(file.size / 1024).toFixed(2)} KB` 
-                    : 'PDF, DOCX, TXT, CSV, XLSX (Max 20MB)'}
+                    : 'PDF, DOCX, TXT, CSV, XLSX, Images (Max 20MB)'}
                 </p>
               </div>
             </div>
@@ -826,7 +932,7 @@ The enhanced system with query rewriting generated more comprehensive responses 
             <button
               onClick={handleUpload}
               disabled={!file || uploading || !connected}
-              className={`upload-button ${(!file || uploading || !connected) ? 'disabled' : ''}`}
+              className={`button full-width ${(!file || uploading || !connected) ? 'disabled' : ''}`}
             >
               {uploading ? 'Uploading...' : 'Upload Document'}
             </button>
@@ -834,12 +940,12 @@ The enhanced system with query rewriting generated more comprehensive responses 
           
           {/* Document info card */}
           {uploadResult && (
-            <div className="document-card">
+            <div className="card card-success">
               <div className="card-header success">
                 <h2>Document Details</h2>
               </div>
               
-              <div className="document-details">
+              <div className="card-body">
                 <div className="info-item">
                   <span className="info-label">Filename:</span>
                   <span className="info-value">{uploadResult.filename}</span>
@@ -871,91 +977,6 @@ The enhanced system with query rewriting generated more comprehensive responses 
               </div>
             </div>
           )}
-
-          {/* Query Statistics Card */}
-          {uploadResult && queryStats && (
-            <div className="stats-card">
-              <div className="card-header stats">
-                <h2>Query Statistics</h2>
-                <button 
-                  className="stats-toggle"
-                  onClick={() => setShowStats(!showStats)}
-                >
-                  {showStats ? '▼' : '▶'}
-                </button>
-              </div>
-              
-              {showStats && (
-                <div className="stats-content">
-                  <div className="stat-item">
-                    <span className="stat-label">Total Documents:</span>
-                    <span className="stat-value">{queryStats.total_documents}</span>
-                  </div>
-                  <div className="stat-item">
-                    <span className="stat-label">Enhanced Retrievers:</span>
-                    <span className="stat-value">{queryStats.enhanced_retrievers}</span>
-                  </div>
-                  <div className="stat-item">
-                    <span className="stat-label">Cache Status:</span>
-                    <span className="stat-value">
-                      {queryStats.cache_sizes.queries} queries cached
-                    </span>
-                  </div>
-                  
-                  <button 
-                    onClick={clearCaches}
-                    className="clear-cache-button"
-                    disabled={!connected}
-                  >
-                    🗑️ Clear Caches
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Enhanced RAG Evaluation Button */}
-          {uploadResult && (
-            <div className="evaluation-card">
-              <div className="card-header purple">
-                <h2>Enhanced RAG Evaluation</h2>
-              </div>
-              
-              <div className="evaluation-content">
-                <p>Compare performance of different RAG approaches including query rewriting techniques.</p>
-                
-                <div className="evaluation-features">
-                  <div className="feature-item">
-                    <span className="feature-icon">🔍</span>
-                    <span>Query expansion analysis</span>
-                  </div>
-                  <div className="feature-item">
-                    <span className="feature-icon">⚡</span>
-                    <span>Performance benchmarking</span>
-                  </div>
-                  <div className="feature-item">
-                    <span className="feature-icon">📊</span>
-                    <span>Technique comparison</span>
-                  </div>
-                </div>
-                
-                {evaluationError && (
-                  <div className="error-message">
-                    <span className="error-icon">⚠️</span>
-                    <p>{evaluationError}</p>
-                  </div>
-                )}
-                
-                <button
-                  onClick={handleEvaluateRAG}
-                  disabled={evaluating || !connected || !uploadResult}
-                  className={`evaluate-button ${(evaluating || !connected || !uploadResult) ? 'disabled' : ''}`}
-                >
-                  {evaluating ? 'Evaluating...' : '📊 Run Enhanced Evaluation'}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
         
         {/* Chat interface */}
@@ -963,7 +984,7 @@ The enhanced system with query rewriting generated more comprehensive responses 
           <div className="chat-header">
             <div className="chat-title">
               <h2>Enhanced Document Chat</h2>
-              <p>
+              <p className="chat-subtitle">
                 {uploadResult 
                   ? `Ask questions about: ${uploadResult.filename}` 
                   : 'Upload a document to start chatting'}
@@ -996,14 +1017,14 @@ The enhanced system with query rewriting generated more comprehensive responses 
             {!connected ? (
               <div className="empty-state">
                 <div className="empty-icon disconnected">🔄</div>
-                <h3>Connecting to Server...</h3>
-                <p>Please wait while we establish connection to the enhanced RAG server.</p>
+                <h3 className="empty-title">Connecting to Server...</h3>
+                <p className="empty-text">Please wait while we establish connection to the enhanced RAG server.</p>
               </div>
             ) : !uploadResult ? (
               <div className="empty-state">
                 <div className="empty-icon">📄</div>
-                <h3>No Document Uploaded</h3>
-                <p>Upload a document using the panel on the left to start asking questions with enhanced RAG capabilities.</p>
+                <h3 className="empty-title">No Document Uploaded</h3>
+                <p className="empty-text">Upload a document using the panel on the left to start asking questions with enhanced RAG capabilities.</p>
                 
                 <div className="enhancement-preview">
                   <h4>Available Enhancements:</h4>
@@ -1018,8 +1039,8 @@ The enhanced system with query rewriting generated more comprehensive responses 
             ) : messages.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">💬</div>
-                <h3>Start the Enhanced Conversation</h3>
-                <p>Your document is ready with enhanced RAG capabilities. Type a question below to experience improved retrieval quality.</p>
+                <h3 className="empty-title">Start the Enhanced Conversation</h3>
+                <p className="empty-text">Your document is ready with enhanced RAG capabilities. Type a question below to experience improved retrieval quality.</p>
                 
                 {/* Show active enhancements */}
                 <div className="active-enhancements">
@@ -1190,7 +1211,7 @@ The enhanced system with query rewriting generated more comprehensive responses 
             <button
               onClick={handleSubmit}
               disabled={!connected || !uploadResult || !input.trim() || loading}
-              className={`send-button enhanced ${(!connected || !uploadResult || !input.trim() || loading) ? 'disabled' : ''}`}
+              className={`button send-button enhanced ${(!connected || !uploadResult || !input.trim() || loading) ? 'disabled' : ''}`}
             >
               {loading ? (
                 <span className="loading-text">
@@ -1206,6 +1227,63 @@ The enhanced system with query rewriting generated more comprehensive responses 
               )}
             </button>
           </div>
+        </div>
+
+        {/* Right side image panel */}
+        <div >
+          <div >
+            <h2>Document Preview</h2>
+          </div>
+          
+          {uploadResult && documentText?.is_image ? (
+            <div className="image-content">
+              <div className="image-container">
+                <p>Image</p>
+                <img 
+                  src={`${getBackendURL()}/document/${uploadResult.filename}`}
+                  alt={`Preview of ${uploadResult.filename}`}
+                  className="document-image"
+                />
+              </div>
+              
+              <div className="image-controls">
+                <button 
+                  onClick={() => window.open(`${getBackendURL()}/document/${uploadResult.filename}`, '_blank')}
+                  className="view-full-btn"
+                >
+                  🔍 View Full Size
+                </button>
+                
+                <div className="image-info">
+                  {documentText.image_info && (
+                    <>
+                      <div className="info-row">
+                        <span className="info-label">Dimensions:</span>
+                        <span className="info-value">
+                          {documentText.image_info.width}×{documentText.image_info.height}px
+                        </span>
+                      </div>
+                      <div className="info-row">
+                        <span className="info-label">Format:</span>
+                        <span className="info-value">{documentText.image_info.format}</span>
+                      </div>
+                      <div className="info-row">
+                        <span className="info-label">Size:</span>
+                        <span className="info-value">
+                          {(documentText.image_info.size_bytes / 1024).toFixed(1)} KB
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="no-image">
+              <div className="empty-icon">🖼️</div>
+              <p>Upload an image to see preview</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

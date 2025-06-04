@@ -992,6 +992,343 @@ async def extract_page_text(request: dict):
         logger.error(f"Error extracting text: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error extracting text: {str(e)}")
     
+
+# Add this to your app_integration_updated.py file
+
+@app.get("/document-text/{document_name}")
+async def get_document_text(document_name: str):
+    """
+    Get the extracted text content from a document, especially useful for images
+    """
+    try:
+        file_path = os.path.join(UPLOAD_DIR, document_name)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"Document {document_name} not found")
+        
+        # Get file extension
+        file_extension = os.path.splitext(document_name)[1].lower()
+        
+        # Check if it's an image file
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp']
+        is_image = file_extension in image_extensions
+        
+        if is_image:
+            # Extract text using our OCR function
+            from updated_document_processor import extract_text_from_image
+            extracted_text = extract_text_from_image(file_path)
+            
+            # Get image metadata
+            try:
+                from PIL import Image
+                with Image.open(file_path) as img:
+                    image_info = {
+                        "width": img.width,
+                        "height": img.height,
+                        "format": img.format,
+                        "mode": img.mode,
+                        "size_bytes": os.path.getsize(file_path),
+                        "has_transparency": img.mode in ('RGBA', 'LA') or 'transparency' in img.info
+                    }
+            except Exception as e:
+                image_info = {
+                    "error": f"Could not read image metadata: {e}",
+                    "size_bytes": os.path.getsize(file_path)
+                }
+            
+            return {
+                "document": document_name,
+                "is_image": True,
+                "extracted_text": extracted_text,
+                "image_info": image_info,
+                "text_length": len(extracted_text),
+                "extraction_method": "OCR (Tesseract/Apple Vision)",
+                "image_url": f"/document/{document_name}"  # For thumbnail display
+            }
+        
+        elif file_extension == '.pdf':
+            # Extract text from PDF
+            from updated_document_processor import extract_pdf_text
+            extracted_text = extract_pdf_text(file_path)
+            
+            return {
+                "document": document_name,
+                "is_image": False,
+                "extracted_text": extracted_text,
+                "text_length": len(extracted_text),
+                "extraction_method": "PDF text extraction"
+            }
+        
+        elif file_extension in ['.txt', '.md', '.csv', '.json', '.xml', '.html']:
+            # Extract text from text files
+            from updated_document_processor import extract_text_file
+            extracted_text = extract_text_file(file_path)
+            
+            return {
+                "document": document_name,
+                "is_image": False,
+                "extracted_text": extracted_text,
+                "text_length": len(extracted_text),
+                "extraction_method": "Direct text reading"
+            }
+        
+        else:
+            return {
+                "document": document_name,
+                "is_image": False,
+                "extracted_text": "[Unsupported file type for text extraction]",
+                "text_length": 0,
+                "extraction_method": "Not supported"
+            }
+    
+    except Exception as e:
+        logger.error(f"Error extracting document text: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error extracting document text: {str(e)}")
+
+@app.get("/document-thumbnail/{document_name}")
+async def get_document_thumbnail(document_name: str, size: int = 200):
+    """
+    Get a thumbnail of an image document
+    """
+    try:
+        file_path = os.path.join(UPLOAD_DIR, document_name)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"Document {document_name} not found")
+        
+        # Check if it's an image
+        file_extension = os.path.splitext(document_name)[1].lower()
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp']
+        
+        if file_extension not in image_extensions:
+            raise HTTPException(status_code=400, detail="File is not an image")
+        
+        try:
+            from PIL import Image
+            import io
+            
+            # Open and resize image
+            with Image.open(file_path) as img:
+                # Convert to RGB if necessary (for JPEG output)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    # Create white background
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                    img = background
+                elif img.mode not in ('RGB', 'L'):
+                    img = img.convert('RGB')
+                
+                # Calculate thumbnail size maintaining aspect ratio
+                img.thumbnail((size, size), Image.Resampling.LANCZOS)
+                
+                # Save to bytes
+                img_byte_arr = io.BytesIO()
+                img.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+                img_byte_arr.seek(0)
+                
+                return StreamingResponse(
+                    io.BytesIO(img_byte_arr.read()),
+                    media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=3600"}
+                )
+        
+        except Exception as e:
+            logger.error(f"Error creating thumbnail: {e}")
+            raise HTTPException(status_code=500, detail=f"Error creating thumbnail: {e}")
+            
+    except Exception as e:
+        logger.error(f"Error processing thumbnail request: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing thumbnail request: {str(e)}")
+
+@app.get("/document-preview/{document_name}")
+async def get_document_preview(document_name: str, max_length: int = 1000):
+    """
+    Get a preview of the document text (first max_length characters)
+    """
+    try:
+        # Get full text
+        full_text_response = await get_document_text(document_name)
+        
+        if "error" in full_text_response:
+            return full_text_response
+        
+        extracted_text = full_text_response.get("extracted_text", "")
+        
+        # Create preview
+        if len(extracted_text) <= max_length:
+            preview_text = extracted_text
+            is_truncated = False
+        else:
+            # Find a good breaking point (end of sentence or word)
+            truncate_point = max_length
+            
+            # Try to break at sentence end
+            last_sentence = extracted_text[:max_length].rfind('.')
+            if last_sentence > max_length * 0.7:  # If we found a sentence end in the last 30%
+                truncate_point = last_sentence + 1
+            else:
+                # Try to break at word boundary
+                last_space = extracted_text[:max_length].rfind(' ')
+                if last_space > max_length * 0.8:  # If we found a space in the last 20%
+                    truncate_point = last_space
+            
+            preview_text = extracted_text[:truncate_point].strip()
+            is_truncated = True
+        
+        return {
+            "document": document_name,
+            "is_image": full_text_response.get("is_image", False),
+            "preview_text": preview_text,
+            "is_truncated": is_truncated,
+            "full_length": len(extracted_text),
+            "preview_length": len(preview_text),
+            "extraction_method": full_text_response.get("extraction_method", "Unknown"),
+            "image_info": full_text_response.get("image_info"),
+            "image_url": full_text_response.get("image_url")
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting document preview: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting document preview: {str(e)}")
+
+
+@app.get("/document-preview/{document_name}")
+async def get_document_preview(document_name: str, max_length: int = 1000):
+    """
+    Get a preview of the document text (first max_length characters)
+    """
+    try:
+        # Get full text
+        full_text_response = await get_document_text(document_name)
+        
+        if "error" in full_text_response:
+            return full_text_response
+        
+        extracted_text = full_text_response.get("extracted_text", "")
+        
+        # Create preview
+        if len(extracted_text) <= max_length:
+            preview_text = extracted_text
+            is_truncated = False
+        else:
+            # Find a good breaking point (end of sentence or word)
+            truncate_point = max_length
+            
+            # Try to break at sentence end
+            last_sentence = extracted_text[:max_length].rfind('.')
+            if last_sentence > max_length * 0.7:  # If we found a sentence end in the last 30%
+                truncate_point = last_sentence + 1
+            else:
+                # Try to break at word boundary
+                last_space = extracted_text[:max_length].rfind(' ')
+                if last_space > max_length * 0.8:  # If we found a space in the last 20%
+                    truncate_point = last_space
+            
+            preview_text = extracted_text[:truncate_point].strip()
+            is_truncated = True
+        
+        return {
+            "document": document_name,
+            "is_image": full_text_response.get("is_image", False),
+            "preview_text": preview_text,
+            "is_truncated": is_truncated,
+            "full_length": len(extracted_text),
+            "preview_length": len(preview_text),
+            "extraction_method": full_text_response.get("extraction_method", "Unknown"),
+            "image_info": full_text_response.get("image_info")
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting document preview: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting document preview: {str(e)}")
+
+@app.post("/reprocess-image")
+async def reprocess_image_ocr(request: dict):
+    """
+    Reprocess an image with different OCR settings
+    """
+    try:
+        document_name = request.get("document")
+        ocr_method = request.get("method", "auto")  # auto, tesseract, apple_vision
+        
+        if not document_name:
+            raise HTTPException(status_code=400, detail="Document name required")
+        
+        file_path = os.path.join(UPLOAD_DIR, document_name)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"Document {document_name} not found")
+        
+        # Check if it's an image
+        file_extension = os.path.splitext(document_name)[1].lower()
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp']
+        
+        if file_extension not in image_extensions:
+            raise HTTPException(status_code=400, detail="File is not an image")
+        
+        # Import OCR functions
+        from updated_document_processor import (
+            try_tesseract_ocr_emergency, 
+            try_apple_vision_ocr_emergency,
+            extract_text_from_image
+        )
+        
+        results = {}
+        
+        if ocr_method == "auto" or ocr_method == "tesseract":
+            # Try Tesseract
+            tesseract_result = try_tesseract_ocr_emergency(file_path)
+            results["tesseract"] = {
+                "success": tesseract_result is not None,
+                "text": tesseract_result or "Failed to extract text",
+                "text_length": len(tesseract_result) if tesseract_result else 0
+            }
+        
+        if ocr_method == "auto" or ocr_method == "apple_vision":
+            # Try Apple Vision
+            vision_result = try_apple_vision_ocr_emergency(file_path)
+            results["apple_vision"] = {
+                "success": vision_result is not None,
+                "text": vision_result or "Failed to extract text",
+                "text_length": len(vision_result) if vision_result else 0
+            }
+        
+        if ocr_method == "auto":
+            # Use the best result
+            best_method = None
+            best_text = ""
+            best_length = 0
+            
+            for method, result in results.items():
+                if result["success"] and result["text_length"] > best_length:
+                    best_method = method
+                    best_text = result["text"]
+                    best_length = result["text_length"]
+            
+            return {
+                "document": document_name,
+                "reprocessing_method": ocr_method,
+                "best_method": best_method,
+                "extracted_text": best_text,
+                "text_length": best_length,
+                "all_results": results
+            }
+        else:
+            # Return specific method result
+            if ocr_method in results:
+                result = results[ocr_method]
+                return {
+                    "document": document_name,
+                    "reprocessing_method": ocr_method,
+                    "extracted_text": result["text"],
+                    "text_length": result["text_length"],
+                    "success": result["success"]
+                }
+            else:
+                raise HTTPException(status_code=400, detail=f"Unknown OCR method: {ocr_method}")
+        
+    except Exception as e:
+        logger.error(f"Error reprocessing image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error reprocessing image: {str(e)}")
 if __name__ == "__main__":
     import uvicorn
     import argparse
