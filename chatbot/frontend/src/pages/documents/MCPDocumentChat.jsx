@@ -111,7 +111,7 @@ const MCPDocumentChat = ({
   const checkServerConnection = async () => {
     try {
       console.log('Checking server connection...');
-      const backendURL = getBackendURL();
+      const backendURL = await getBackendURL();
       const response = await axios.get(`${backendURL}/`);
       setServerInfo(response.data);
       setConnected(true);

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Document chat application with local LLM support",
   "type": "module",
-  "main": "electron/main.cjs",
+  "main": "frontend/main.cjs",
   "scripts": {
     "start": "electron .",
     "dev": "concurrently \"cd frontend && npm start\" \"cross-env NODE_ENV=development electron .\"",
@@ -25,33 +25,25 @@
   "build": {
     "appId": "com.yourdomain.documentchat",
     "productName": "Document Chat",
+    
     "files": [
-      "electron/**/*",
-      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
-      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
-      "!**/node_modules/*/{.babelrc,.eslintrc,.eslintrc.json}"
+     
+  "frontend/main.cjs",
+  "frontend/preload.cjs",
+  "frontend/electron_backend.cjs",
+  "frontend/model_downloader.cjs",
+  "frontend/dist/**"
     ],
+    "afterPack": "./electron/afterPack.cjs",
     "extraResources": [
-      {
-        "from": "electron/bin",
-        "to": "bin",
-        "filter": [
-          "**/*"
-        ]
-      }
+      { "from": "backend/dist/chatbot-backend", "to": "backend/chatbot-backend" }
     ],
     "directories": {
       "buildResources": "resources",
       "output": "build"
     },
-    "mac": {
-      "category": "public.app-category.productivity"
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
+    "mac": { "target": ["zip"] },
+    "win": { "target": ["nsis"] },
     "linux": {
       "target": [
         "AppImage",
@@ -59,5 +51,6 @@
       ],
       "category": "Office"
     }
+    
   }
 }

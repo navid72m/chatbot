@@ -1,16 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import axios from 'axios';
+import React, { useState, useEffect, useCallback } from "react";
+import { HashRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import axios from "axios";
 
-// Import components with the correct paths
-import MCPDocumentChat from './pages/documents/MCPDocumentChat';
-import ModelDownloadPage from './components/ModelDownloadPage'; // Updated import path
-import RAGEvaluationDashboard from './pages/documents/RAGEvaluationDashboard';
-import EnhancedDocumentChat from './pages/documents/EnhancedDocumentChat';
-// Simple placeholder component for not found page
-const NotFound = () => <div className="page-container"><h1>404</h1><p>Page not found</p></div>;
+import ModelDownloadPage from "./components/ModelDownloadPage";
+import RAGEvaluationDashboard from "./pages/documents/RAGEvaluationDashboard";
+import EnhancedDocumentChat from "./pages/documents/EnhancedDocumentChat";
 
-// Optional global loading indicator for streaming state
+// IMPORTANT: use the same helper your chat uses
+import { getBackendURL } from "@/api/baseURL";
+
+const NotFound = () => (
+  <div className="page-container">
+    <h1>404</h1>
+    <p>Page not found</p>
+  </div>
+);
+
 const StreamingIndicator = () => (
   <div className="global-streaming-indicator">
     <div className="pulse-dot"></div>
@@ -19,185 +24,223 @@ const StreamingIndicator = () => (
 );
 
 function App() {
-  // Global state for streaming status
   const [isStreaming, setIsStreaming] = useState(false);
+
+  // Backend URL resolved once (dynamic port in Electron)
+  const [backendURL, setBackendURL] = useState(null);
+  const [backendInitError, setBackendInitError] = useState(null);
+
   const [serverStatus, setServerStatus] = useState({
     initialized: false,
     streamingSupported: true,
-    modelManagementSupported: false
+    modelManagementSupported: false,
   });
-  
-  // Model related state
+
   const [modelState, setModelState] = useState({
     needsDownload: false,
     selectedModel: "llama2",
     downloadCompleted: false,
-    availableModels: []
+    availableModels: [],
   });
 
-  // Function to check server capabilities on app load
+  // ----------------------------
+  // Resolve backend URL once
+  // ----------------------------
   useEffect(() => {
-    const checkServerCapabilities = async () => {
+    let cancelled = false;
+
+    (async () => {
       try {
-        // You can adjust this URL based on your API configuration
-        const baseUrl = 'http://localhost:8000';
-        const response = await axios.get(`${baseUrl}/`);
-        
-        // Check if streaming is supported
-        const features = response.data.features || [];
-        const streamingSupported = features.some(
-          f => f.id === 'streaming' && f.enabled
-        );
-        
-        // Check if model management is supported
-        const modelManagementSupported = features.some(
-          f => f.id === 'model_management' && f.enabled
-        );
+        const url = await getBackendURL(); // <-- dynamic in Electron
+        if (cancelled) return;
+
+        setBackendURL(url);
+
+        // Set axios global baseURL so any component that uses axios without a base URL works
+        axios.defaults.baseURL = url;
+        axios.defaults.headers.common["Accept"] = "application/json";
+
+      } catch (err) {
+        console.error("Failed to resolve backend URL:", err);
+        if (!cancelled) setBackendInitError(err?.message || String(err));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ----------------------------
+  // Check server capabilities once backendURL is known
+  // ----------------------------
+  const checkModelStatus = useCallback(async () => {
+    try {
+      const response = await axios.get("/models"); // uses axios.defaults.baseURL
+      const availableModels = response.data?.models || [];
+      const downloadedModels = response.data?.downloaded_models || [];
+
+      setModelState((prev) => ({
+        ...prev,
+        availableModels,
+      }));
+
+      if (downloadedModels.length === 0) {
+        setModelState((prev) => ({
+          ...prev,
+          needsDownload: true,
+          selectedModel: availableModels[0] || "llama2",
+        }));
+      } else {
+        setModelState((prev) => ({
+          ...prev,
+          needsDownload: false,
+          selectedModel: downloadedModels[0],
+        }));
+      }
+    } catch (error) {
+      console.error("Error checking model status:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!backendURL) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await axios.get("/"); // uses axios.defaults.baseURL
+
+        // Your backend returns features as an array of strings, not [{id, enabled}]
+        // Example: ["Universal Entity Extraction", ...]
+        // So we can't detect streaming/model management from your current backend response.
+        // We'll keep safe defaults.
+        const features = response.data?.features || [];
+
+        // If you later implement structured features, this logic will still work:
+        const streamingSupported = Array.isArray(features)
+          ? true
+          : true;
+
+        const modelManagementSupported = false; // your backend doesn't expose downloaded_models manager currently
+
+        if (cancelled) return;
 
         setServerStatus({
           initialized: true,
           streamingSupported,
-          modelManagementSupported
+          modelManagementSupported,
         });
-        
-        // Check if we need to download a model
+
         if (modelManagementSupported) {
-          checkModelStatus();
+          await checkModelStatus();
         }
       } catch (error) {
-        console.warn('Could not check server capabilities:', error);
-        // Default to assuming streaming is supported if we can't check
-        setServerStatus({
-          initialized: true,
-          streamingSupported: true,
-          modelManagementSupported: false
-        });
+        console.warn("Could not check server capabilities:", error);
+        if (!cancelled) {
+          setServerStatus({
+            initialized: true,
+            streamingSupported: true,
+            modelManagementSupported: false,
+          });
+        }
       }
+    })();
+
+    return () => {
+      cancelled = true;
     };
+  }, [backendURL, checkModelStatus]);
 
-    checkServerCapabilities();
-  }, []);
-  
-  // Check if we need to download a model
-  const checkModelStatus = async () => {
-    try {
-      const response = await axios.get(`http://localhost:8000/models`);
-      const availableModels = response.data.models || [];
-      const downloadedModels = response.data.downloaded_models || [];
-      
-      // Set the available models
-      setModelState(prev => ({
-        ...prev,
-        availableModels: availableModels
-      }));
-      
-      // If no models are downloaded, show the download page
-      if (downloadedModels.length === 0) {
-        setModelState(prev => ({
-          ...prev,
-          needsDownload: true,
-          selectedModel: availableModels[0] || "llama2"
-        }));
-      } else {
-        // Set the selected model to the first downloaded model
-        setModelState(prev => ({
-          ...prev,
-          needsDownload: false,
-          selectedModel: downloadedModels[0]
-        }));
-      }
-    } catch (error) {
-      console.error('Error checking model status:', error);
-    }
-  };
+  // ----------------------------
+  // Handlers
+  // ----------------------------
+  const handleStreamingStateChange = (isActive) => setIsStreaming(isActive);
 
-  // Handler for streaming state changes
-  const handleStreamingStateChange = (isActive) => {
-    setIsStreaming(isActive);
-  };
-
-  // Handler for errors from the chat component
   const handleChatError = (error) => {
-    console.error('Chat error:', error);
+    console.error("Chat error:", error);
   };
-  
-  // Handler for when model download completes
+
   const handleModelDownloadComplete = (model) => {
     console.log(`Model ${model} download complete`);
-    setModelState(prev => ({
+    setModelState((prev) => ({
       ...prev,
       needsDownload: false,
       selectedModel: model,
-      downloadCompleted: true
+      downloadCompleted: true,
     }));
   };
 
-  // Conditionally render the model download page or chat interface
-  const renderContent = () => {
-    // If the server supports model management and we need to download a model
-    if (serverStatus.modelManagementSupported && modelState.needsDownload) {
-      return (
-        // <ModelDownloadPage 
-        //   onDownloadComplete={handleModelDownloadComplete}
-        //   selectedModel={modelState.selectedModel}
-        //   autoDownload={false}
-        // />
-        <EnhancedDocumentChat
-          onStreamingStateChange={handleStreamingStateChange}
-          onError={handleChatError}
-          initialStreamingEnabled={serverStatus.streamingSupported}
-          selectedModel={modelState.selectedModel}
-        />
-      );
-    }
-    
-    // Otherwise, show the chat interface
+  // ----------------------------
+  // Render guards
+  // ----------------------------
+  if (backendInitError) {
     return (
+      <div className="page-container">
+        <h2>Backend connection failed</h2>
+        <p>{backendInitError}</p>
+        <p style={{ maxWidth: 720 }}>
+          This usually means the Electron main process didn’t expose the backend URL
+          to the renderer, or the backend didn’t start.
+        </p>
+      </div>
+    );
+  }
+
+  if (!backendURL) {
+    return (
+      <div className="page-container">
+        <h2>Starting…</h2>
+        <p>Resolving backend URL…</p>
+      </div>
+    );
+  }
+
+  // Conditionally render model download page OR chat
+  const contentElement =
+    serverStatus.modelManagementSupported && modelState.needsDownload ? (
+      <ModelDownloadPage
+        onDownloadComplete={handleModelDownloadComplete}
+        selectedModel={modelState.selectedModel}
+      />
+    ) : (
       <EnhancedDocumentChat
+        backendURL={backendURL} // <-- give it to the page (recommended)
         onStreamingStateChange={handleStreamingStateChange}
         onError={handleChatError}
         initialStreamingEnabled={serverStatus.streamingSupported}
         selectedModel={modelState.selectedModel}
       />
     );
-  };
 
   return (
     <Router>
       <div className="app">
         <Routes>
-          {/* Redirect root path to the document upload page */}
           <Route path="/" element={<Navigate to="/documents/upload" replace />} />
-          
-          {/* Document chat with conditional model download */}
-          <Route path="/documents/upload" element={renderContent()} />
-          
-          {/* Explicit route for model download page */}
-          <Route path="/models/download" element={
-            <ModelDownloadPage 
-              onDownloadComplete={handleModelDownloadComplete}
-              selectedModel={modelState.selectedModel}
-            />
-          } />
-
-          {/* Evaluation dashboard */}
+          <Route path="/documents/upload" element={contentElement} />
+          <Route
+            path="/models/download"
+            element={
+              <ModelDownloadPage
+                onDownloadComplete={handleModelDownloadComplete}
+                selectedModel={modelState.selectedModel}
+              />
+            }
+          />
           <Route path="/evaluation" element={<RAGEvaluationDashboard />} />
-          {/* <Route path="/evaluation" element={<RAGEvaluationDashboard />} /> */}
-
           <Route path="*" element={<NotFound />} />
         </Routes>
-        
-        {/* Global streaming indicator */}
+
         {isStreaming && <StreamingIndicator />}
       </div>
 
-      {/* Global styles */}
       <style jsx="true">{`
         .app {
           height: 100vh;
           position: relative;
         }
-        
         .global-streaming-indicator {
           position: fixed;
           bottom: 20px;
@@ -214,12 +257,16 @@ function App() {
           z-index: 1000;
           animation: fadeIn 0.3s ease-in-out;
         }
-        
         @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
-        
         .pulse-dot {
           width: 8px;
           height: 8px;
@@ -227,13 +274,20 @@ function App() {
           background-color: white;
           animation: pulse 1.5s infinite;
         }
-        
         @keyframes pulse {
-          0% { transform: scale(0.8); opacity: 0.5; }
-          50% { transform: scale(1.2); opacity: 1; }
-          100% { transform: scale(0.8); opacity: 0.5; }
+          0% {
+            transform: scale(0.8);
+            opacity: 0.5;
+          }
+          50% {
+            transform: scale(1.2);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(0.8);
+            opacity: 0.5;
+          }
         }
-        
         .page-container {
           display: flex;
           flex-direction: column;
@@ -241,6 +295,7 @@ function App() {
           justify-content: center;
           height: 100vh;
           text-align: center;
+          padding: 24px;
         }
       `}</style>
     </Router>

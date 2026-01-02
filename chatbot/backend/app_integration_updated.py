@@ -94,13 +94,37 @@ class QueryRewritingConfig(BaseModel):
     prf_top_k: int = 3
     expansion_terms: int = 5
     variant_count: int = 3
-
+from pathlib import Path
 # Create FastAPI application
 app = FastAPI(title="Smart Document Chat Backend with Universal Retrieval + Query Rewriting")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+static_dir = Path("static")
+if static_dir.exists() and static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+else:
+    print("WARN: static/ folder not found; skipping static mount")
 
 # Model configuration
-MODEL_PATH = os.environ.get("LLAMA_CPP_MODEL_PATH", "./models/mamba-790m-hf.Q4_K_M.gguf")
+import os
+import argparse
+
+
+def parse_args():
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--model", default=None)
+    return p.parse_known_args()[0]
+
+def get_model_path():
+    args = parse_args()
+    model = args.model or os.getenv("LLAMA_CPP_MODEL_PATH")
+    if not model:
+        return None
+    return str(Path(model).expanduser().resolve())
+
+MODEL_PATH = get_model_path()
+
+
 CTX_SIZE = int(os.environ.get("LLAMA_CTX_SIZE", 2048))
 N_THREADS = int(os.environ.get("LLAMA_THREADS", os.cpu_count()))
 N_GPU_LAYERS = int(os.environ.get("LLAMA_GPU_LAYERS", -1))
@@ -1329,6 +1353,12 @@ async def reprocess_image_ocr(request: dict):
     except Exception as e:
         logger.error(f"Error reprocessing image: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error reprocessing image: {str(e)}")
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
+
 if __name__ == "__main__":
     import uvicorn
     import argparse
