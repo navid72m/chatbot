@@ -51,7 +51,7 @@ This repo includes **intent routing** that detects such queries and fetches cont
 
 > Save your diagram image as: `assets/rag_pipeline.png`
 
-![Enhanced RAG Pipeline](assets/rag_pipeline.png)
+![Enhanced RAG Pipeline](rag_pipeline.png)
 
 ---
 
